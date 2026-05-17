@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="336" viewBox="0 0 240 336" role="img" aria-labelledby="title desc">
+  <title id="title">Action card placeholder</title>
+  <desc id="desc">A simple placeholder image for action cards.</desc>
+  <rect width="240" height="336" rx="12" fill="#efe7d6"/>
+  <rect x="14" y="14" width="212" height="308" rx="8" fill="none" stroke="#8a5f35" stroke-width="4"/>
+  <path d="M120 62l18 55 58 1-47 34 17 56-46-34-47 34 18-56-47-34 58-1z" fill="#c6813f"/>
+  <rect x="52" y="230" width="136" height="16" rx="4" fill="#8a5f35"/>
+  <text x="120" y="282" fill="#4b3323" font-family="serif" font-size="24" text-anchor="middle">ACTION</text>
+</svg>
