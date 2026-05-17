@@ -16,6 +16,7 @@ import { selectCurrentPlayer } from "@/lib/game/selectors";
 export function GameBoard() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
   const currentPlayer = selectCurrentPlayer(state);
+  const canPlayActions = state.phase === "playing" && state.turnStep === "playActionOptional" && Boolean(currentPlayer);
 
   if (state.phase === "setup") {
     return <LocalGameSetup onStartGame={(playerNames) => dispatch({ type: "START_GAME", playerNames })} />;
@@ -32,13 +33,23 @@ export function GameBoard() {
         <div className="rounded-lg border border-stone-300 bg-white p-4 shadow-sm">
           <p className="text-sm text-stone-600">Current Turn</p>
           <h2 className="text-2xl font-bold">{currentPlayer?.name ?? "No player"}</h2>
+          <p className="mt-1 text-sm text-stone-600">
+            {state.turnStep === "playActionOptional" ? "May play one action, then take a noble." : "Must take the front noble."}
+          </p>
         </div>
         <NobleLine nobles={state.nobleLine.cards} />
-        <ActionHand player={currentPlayer} />
+        <ActionHand
+          canPlayActions={canPlayActions}
+          player={currentPlayer}
+          onPlayAction={(cardId) =>
+            currentPlayer && dispatch({ type: "PLAY_ACTION_CARD", playerId: currentPlayer.id, cardId })
+          }
+        />
         <TurnControls
           canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}
           canUndo={state.gameHistory.length > 0}
           currentPlayerId={currentPlayer?.id}
+          turnStep={state.turnStep}
           onTakeNoble={(playerId) => dispatch({ type: "TAKE_FRONT_NOBLE", playerId })}
           onUndo={() => dispatch({ type: "UNDO_LAST_ACTION" })}
         />

@@ -1,4 +1,4 @@
-export type PlayerId = string;
+﻿export type PlayerId = string;
 export type CardId = string;
 export type CardInstanceId = string;
 
@@ -30,12 +30,10 @@ export interface ActionCard extends BaseCard {
 }
 
 export type ActionEffectKey =
-  | "none"
-  | "moveNoble"
-  | "swapNobles"
-  | "drawCards"
-  | "extraTurn"
-  | "scoreModifier";
+  | "moveFrontNobleBackOne"
+  | "moveBackNobleForwardOne"
+  | "swapFirstTwoNobles"
+  | "drawOneActionCard";
 
 export interface CardInstance<TCard extends BaseCard = BaseCard> {
   instanceId: CardInstanceId;
