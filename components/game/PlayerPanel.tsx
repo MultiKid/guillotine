@@ -1,4 +1,5 @@
 ﻿import { Card } from "@/components/ui/Card";
+import { getNobleColorStyle } from "@/lib/cards/nobleColors";
 import type { PlayerId, Player } from "@/lib/game/types";
 
 type PlayerPanelProps = {
@@ -25,6 +26,18 @@ export function PlayerPanel({ players, currentPlayerId }: PlayerPanelProps) {
             <p className="mt-1 text-sm text-stone-600">
               {player.hand.length} cards in hand, {player.collectedNobles.length} nobles collected
             </p>
+            {player.collectedNobles.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {player.collectedNobles.slice(-6).map((noble) => (
+                  <span
+                    className={`rounded-md border px-2 py-1 text-xs font-medium text-stone-800 ${getNobleColorStyle(noble.card.colorCategory)}`}
+                    key={noble.instanceId}
+                  >
+                    {noble.card.name}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

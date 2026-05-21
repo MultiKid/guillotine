@@ -11,10 +11,10 @@ import { ScorePanel } from "@/components/game/ScorePanel";
 import { TurnControls } from "@/components/game/TurnControls";
 import { LocalGameSetup } from "@/components/setup/LocalGameSetup";
 import { createInitialGameState } from "@/lib/game/createGame";
-import { getValidActionTargets } from "@/lib/game/effects";
+import { actionEffectRequiresTarget, canApplyActionEffect, getValidActionTargets } from "@/lib/game/effects";
 import { gameReducer } from "@/lib/game/gameReducer";
 import { selectCurrentPlayer } from "@/lib/game/selectors";
-import type { ActionTarget, CardInstanceId } from "@/lib/game/types";
+import type { ActionCard, ActionTarget, CardInstance, CardInstanceId } from "@/lib/game/types";
 
 export function GameBoard() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
@@ -34,6 +34,18 @@ export function GameBoard() {
 
     dispatch({ type: "PLAY_ACTION_CARD", playerId: currentPlayer.id, cardId, target });
     setSelectedActionCardId(undefined);
+  }
+
+  function canPlayActionCard(action: CardInstance<ActionCard>) {
+    if (!currentPlayer) {
+      return false;
+    }
+
+    if (actionEffectRequiresTarget(action.card.effectKey)) {
+      return getValidActionTargets(state, action.card.effectKey, { playerId: currentPlayer.id }).length > 0;
+    }
+
+    return canApplyActionEffect(state, action.card.effectKey, { playerId: currentPlayer.id });
   }
 
   function takeNoble(playerId: string) {
@@ -92,6 +104,7 @@ export function GameBoard() {
           player={currentPlayer}
           selectedActionCardId={selectedActionCardId}
           validTargets={validTargets}
+          canPlayActionCard={canPlayActionCard}
           onSelectAction={setSelectedActionCardId}
           onPlayAction={playAction}
         />

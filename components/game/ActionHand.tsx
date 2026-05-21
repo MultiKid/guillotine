@@ -2,13 +2,14 @@
 import { Card } from "@/components/ui/Card";
 import { actionEffectRequiresTarget } from "@/lib/game/effects";
 import type { ValidActionTarget } from "@/lib/game/effects";
-import type { ActionTarget, CardInstanceId, Player } from "@/lib/game/types";
+import type { ActionCard, ActionTarget, CardInstance, CardInstanceId, Player } from "@/lib/game/types";
 
 type ActionHandProps = {
   canPlayActions: boolean;
   player?: Player;
   selectedActionCardId?: CardInstanceId;
   validTargets: ValidActionTarget[];
+  canPlayActionCard: (card: CardInstance<ActionCard>) => boolean;
   onSelectAction: (cardId: CardInstanceId) => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
 };
@@ -18,6 +19,7 @@ export function ActionHand({
   player,
   selectedActionCardId,
   validTargets,
+  canPlayActionCard,
   onSelectAction,
   onPlayAction,
 }: ActionHandProps) {
@@ -49,6 +51,7 @@ export function ActionHand({
         {player?.hand.map((action) => {
           const requiresTarget = actionEffectRequiresTarget(action.card.effectKey);
           const isSelected = action.instanceId === selectedActionCardId;
+          const isPlayable = canPlayActions && canPlayActionCard(action);
 
           return (
             <div
@@ -59,10 +62,10 @@ export function ActionHand({
               <p className="mt-1 text-sm text-stone-600">{action.card.description}</p>
               <Button
                 className="mt-3 w-full"
-                disabled={!canPlayActions}
+                disabled={!isPlayable}
                 onClick={() => (requiresTarget ? onSelectAction(action.instanceId) : onPlayAction(action.instanceId))}
               >
-                {requiresTarget ? "Choose Target" : "Play Card"}
+                {isPlayable ? (requiresTarget ? "Choose Target" : "Play Card") : "No Legal Play"}
               </Button>
             </div>
           );

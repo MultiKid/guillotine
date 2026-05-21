@@ -5,6 +5,7 @@ import type {
   CardInstance,
   GameState,
   NobleCard,
+  NobleColorCategory,
   Player,
   PlayerId,
 } from "@/lib/game/types";
@@ -93,6 +94,19 @@ export const actionEffects: Record<ActionEffectKey, ActionEffectDefinition> = {
   scarletPimpernel: createImmediateEffect("End the day after this turn", markDayEndsAfterTurn),
   bribedGuards: createImmediateEffect("Move the front noble to the end of the line", moveFrontNobleToEnd),
   theLongWalk: createImmediateEffect("Reverse the order of the line", reverseNobleLine),
+  lackOfFaith: createImmediateEffect("Move the Blue noble nearest the front to the front of the line", moveNearestBlueNobleToFront),
+  militaryMight: createColorMoveEffect({
+    label: "Move a Red noble forward up to 2 places",
+    colorCategory: "red",
+  }),
+  majesty: createColorMoveEffect({
+    label: "Move a Purple noble forward up to 2 places",
+    colorCategory: "purple",
+  }),
+  civicPride: createColorMoveEffect({
+    label: "Move a Green noble forward up to 2 places",
+    colorCategory: "green",
+  }),
   extraCart: createImmediateEffect("Add 3 nobles to the end of the line", addExtraCartNobles),
   politicalInfluence: createImmediateEffect("Draw 3 action cards and end this turn", drawPoliticalInfluenceCards),
   doubleFeature: createImmediateEffect("Take an extra front noble immediately", takeExtraFrontNoble),
@@ -186,6 +200,7 @@ function createMoveEffect(config: {
   label: string;
   direction: "forward" | "backward";
   spaces: number[];
+  predicate?: (noble: CardInstance<NobleCard>) => boolean;
 }): ActionEffectDefinition {
   return {
     label: config.label,
@@ -212,10 +227,18 @@ function createMoveToFrontEffect(config: {
 
 function getMoveTargets(
   state: GameState,
-  config: { direction: "forward" | "backward"; spaces: number[] },
+  config: {
+    direction: "forward" | "backward";
+    spaces: number[];
+    predicate?: (noble: CardInstance<NobleCard>) => boolean;
+  },
 ): ValidActionTarget[] {
   return state.nobleLine.cards.flatMap((noble, index) =>
     config.spaces.flatMap((spaceCount) => {
+      if (config.predicate && !config.predicate(noble)) {
+        return [];
+      }
+
       const destinationIndex = getDestinationIndex(index, config.direction, spaceCount);
 
       if (destinationIndex < 0 || destinationIndex >= state.nobleLine.cards.length || destinationIndex === index) {
@@ -267,7 +290,11 @@ function getMoveToFrontTargets(
 function applyMoveTarget(
   state: GameState,
   target: ActionTarget | undefined,
-  config: { direction: "forward" | "backward"; spaces: number[] },
+  config: {
+    direction: "forward" | "backward";
+    spaces: number[];
+    predicate?: (noble: CardInstance<NobleCard>) => boolean;
+  },
 ): ActionEffectResult {
   if (!target || target.type !== "move-noble") {
     return invalidResult(state, "requires a noble movement target");
@@ -288,6 +315,11 @@ function applyMoveTarget(
   }
 
   const noble = state.nobleLine.cards[fromIndex];
+
+  if (!noble || (config.predicate && !config.predicate(noble))) {
+    return invalidResult(state, "does not match this card's required noble color");
+  }
+
   const cards = state.nobleLine.cards.filter((card) => card.instanceId !== target.instanceId);
   cards.splice(toIndex, 0, noble);
 
@@ -296,6 +328,15 @@ function applyMoveTarget(
     applied: true,
     message: `moved ${noble.card.name} from position ${fromIndex + 1} to ${toIndex + 1}`,
   };
+}
+
+function createColorMoveEffect(config: { label: string; colorCategory: NobleColorCategory }): ActionEffectDefinition {
+  return createMoveEffect({
+    label: config.label,
+    direction: "forward",
+    spaces: [1, 2],
+    predicate: (noble) => noble.card.colorCategory === config.colorCategory,
+  });
 }
 
 function applyMoveToFrontTarget(
@@ -338,6 +379,25 @@ function moveMarieAntoinetteToFront(state: GameState): ActionEffectResult {
       state,
       applied: true,
       message: "Marie Antoinette was already at the front of the line",
+    };
+  }
+
+  return moveNobleToIndex(state, fromIndex, 0);
+}
+
+function moveNearestBlueNobleToFront(state: GameState): ActionEffectResult {
+  const fromIndex = state.nobleLine.cards.findIndex((noble) => noble.card.colorCategory === "blue");
+  const noble = state.nobleLine.cards[fromIndex];
+
+  if (fromIndex < 0 || !noble) {
+    return invalidResult(state, "there are no Blue nobles in line");
+  }
+
+  if (fromIndex === 0) {
+    return {
+      state,
+      applied: true,
+      message: `${noble.card.name} was already the Blue noble nearest the front`,
     };
   }
 

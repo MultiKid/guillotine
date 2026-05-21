@@ -18,10 +18,13 @@ export interface BaseCard {
   description?: string;
 }
 
+export type NobleColorCategory = "blue" | "red" | "green" | "purple" | "gray";
+
 export interface NobleCard extends BaseCard {
   kind: "noble";
   points: number;
   group?: string;
+  colorCategory: NobleColorCategory;
 }
 
 export interface ActionCard extends BaseCard {
@@ -47,6 +50,10 @@ export type ActionEffectKey =
   | "bribedGuards"
   | "publicDemand"
   | "theLongWalk"
+  | "lackOfFaith"
+  | "militaryMight"
+  | "majesty"
+  | "civicPride"
   | "moveFrontNobleBackOne"
   | "moveBackNobleForwardOne"
   | "swapFirstTwoNobles"

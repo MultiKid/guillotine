@@ -79,6 +79,22 @@ const implementedActions: Record<string, { effectKey: ActionEffectKey; descripti
     effectKey: "theLongWalk",
     description: "Reverse the order of the line.",
   },
+  "Lack of Faith": {
+    effectKey: "lackOfFaith",
+    description: "If there are any Blue nobles in line, move the one nearest the front to the front of the line.",
+  },
+  "Military Might": {
+    effectKey: "militaryMight",
+    description: "Move a Red noble forward up to 2 places in line.",
+  },
+  Majesty: {
+    effectKey: "majesty",
+    description: "Move a Purple noble forward up to 2 places in line.",
+  },
+  "Civic Pride": {
+    effectKey: "civicPride",
+    description: "Move a Green noble forward up to 2 places in line.",
+  },
 };
 
 const actionNames = [
