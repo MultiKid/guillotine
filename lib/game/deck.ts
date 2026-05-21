@@ -1,4 +1,5 @@
-﻿import type { BaseCard, CardInstance, DeckState } from "@/lib/game/types";
+﻿import type { CardDefinition } from "@/lib/cards/definitions";
+import type { BaseCard, CardInstance, DeckState } from "@/lib/game/types";
 
 export function createEmptyDeck<TCard extends BaseCard>(): DeckState<TCard> {
   return {
@@ -46,3 +47,16 @@ export function createCardInstances<TCard extends BaseCard>(
     })),
   );
 }
+
+export function createCardInstancesFromDefinitions<TCard extends BaseCard>(
+  definitions: CardDefinition<TCard>[],
+): CardInstance<TCard>[] {
+  return definitions.flatMap(({ quantity, ...card }) =>
+    Array.from({ length: quantity }, (_, copyIndex) => ({
+      instanceId: `${card.id}-${copyIndex + 1}`,
+      cardId: card.id,
+      card: card as unknown as TCard,
+    })),
+  );
+}
+

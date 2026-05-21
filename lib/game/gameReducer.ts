@@ -1,8 +1,10 @@
 ﻿import { createLocalGameState } from "@/lib/game/createGame";
 import { applyActionEffect, canApplyActionEffect } from "@/lib/game/effects";
+import { NOBLE_LINE_SIZE } from "@/lib/game/constants";
 import { pushGameHistory, undoLastAction } from "@/lib/game/history";
 import { calculatePlayerScore } from "@/lib/game/scoring";
 import type {
+  ActionTarget,
   CardInstanceId,
   GameCommand,
   GameLogEntry,
@@ -15,12 +17,14 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
   switch (command.type) {
     case "START_GAME":
       return createLocalGameState(command.playerNames);
-    case "PLAY_ACTION_CARD":
-      return playActionCard(state, command.playerId, command.cardId);
-    case "TAKE_FRONT_NOBLE":
-      return takeFrontNoble(state, command.playerId);
+    case "READY_FOR_TURN":
+      return readyForTurn(state);
     case "UNDO_LAST_ACTION":
       return undoLastAction(state);
+    case "PLAY_ACTION_CARD":
+      return state.passScreen.visible ? state : playActionCard(state, command.playerId, command.cardId, command.target);
+    case "TAKE_FRONT_NOBLE":
+      return state.passScreen.visible ? state : takeFrontNoble(state, command.playerId);
     case "END_TURN":
     case "START_NEXT_DAY":
       return state;
@@ -29,7 +33,25 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
   }
 }
 
-function playActionCard(state: GameState, playerId: PlayerId, cardId: CardInstanceId): GameState {
+function readyForTurn(state: GameState): GameState {
+  if (!state.passScreen.visible) {
+    return state;
+  }
+
+  return {
+    ...state,
+    passScreen: {
+      visible: false,
+    },
+  };
+}
+
+function playActionCard(
+  state: GameState,
+  playerId: PlayerId,
+  cardId: CardInstanceId,
+  target?: ActionTarget,
+): GameState {
   const currentPlayer = state.players[state.currentPlayerIndex];
 
   if (
@@ -43,7 +65,7 @@ function playActionCard(state: GameState, playerId: PlayerId, cardId: CardInstan
 
   const actionCard = currentPlayer.hand.find((card) => card.instanceId === cardId);
 
-  if (!actionCard || !canApplyActionEffect(state, actionCard.card.effectKey, { playerId })) {
+  if (!actionCard || !canApplyActionEffect(state, actionCard.card.effectKey, { playerId, target })) {
     return state;
   }
 
@@ -60,15 +82,17 @@ function playActionCard(state: GameState, playerId: PlayerId, cardId: CardInstan
     ),
   };
 
-  const result = applyActionEffect(stateWithoutCardInHand, actionCard.card.effectKey, { playerId });
+  const result = applyActionEffect(stateWithoutCardInHand, actionCard.card.effectKey, { playerId, target });
 
   if (!result.applied) {
     return state;
   }
 
-  return {
+  const stateWithDiscard: GameState = {
     ...result.state,
-    turnStep: "takeNobleRequired",
+    passScreen: {
+      visible: false,
+    },
     actionDeck: {
       ...result.state.actionDeck,
       discardPile: [actionCard, ...result.state.actionDeck.discardPile],
@@ -76,11 +100,31 @@ function playActionCard(state: GameState, playerId: PlayerId, cardId: CardInstan
     log: [
       createLogEntry(
         result.state,
-        `${currentPlayer.name} played ${actionCard.card.name} and ${result.message}.`,
+        result.logMessage ?? `${currentPlayer.name} played ${actionCard.card.name} and ${result.message}.`,
         playerId,
       ),
       ...result.state.log,
     ],
+  };
+
+  if (stateWithDiscard.nobleLine.cards.length === 0 && !result.skipEmptyLineDayEnd) {
+    return endCurrentDay(stateWithDiscard, "The noble line is empty.");
+  }
+
+  if (result.endsTurn) {
+    return showPassScreen({
+      ...stateWithDiscard,
+      currentPlayerIndex: getNextPlayerIndex(stateWithDiscard.currentPlayerIndex, stateWithDiscard.players.length),
+      turnStep: "playActionOptional",
+      turnEffects: {
+        endDayAfterTurn: false,
+      },
+    });
+  }
+
+  return {
+    ...stateWithDiscard,
+    turnStep: "takeNobleRequired",
   };
 }
 
@@ -94,12 +138,7 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
 
   const historyState = pushGameHistory(state, `${currentPlayer.name} took ${frontNoble.card.name}.`);
   const [drawnAction, ...remainingActionDeck] = historyState.actionDeck.drawPile;
-  const [replacementNoble, ...remainingNobleDeck] = historyState.nobleDeck.drawPile;
   const updatedNobleLine = historyState.nobleLine.cards.slice(1);
-
-  if (replacementNoble) {
-    updatedNobleLine.push(replacementNoble);
-  }
 
   const updatedPlayers = historyState.players.map((player) => {
     if (player.id !== playerId) {
@@ -119,22 +158,20 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
   });
 
   const nextPlayerIndex = getNextPlayerIndex(historyState.currentPlayerIndex, historyState.players.length);
-  const gameEnded = updatedNobleLine.length === 0 && remainingNobleDeck.length === 0;
-
-  return {
+  const nextState: GameState = {
     ...historyState,
-    phase: gameEnded ? "gameEnd" : "playing",
+    phase: "playing",
     players: updatedPlayers,
-    currentPlayerIndex: gameEnded ? historyState.currentPlayerIndex : nextPlayerIndex,
+    currentPlayerIndex: nextPlayerIndex,
     turnStep: "playActionOptional",
+    passScreen: {
+      visible: false,
+    },
     actionDeck: {
       ...historyState.actionDeck,
       drawPile: remainingActionDeck,
     },
-    nobleDeck: {
-      ...historyState.nobleDeck,
-      drawPile: remainingNobleDeck,
-    },
+    nobleDeck: historyState.nobleDeck,
     nobleLine: {
       cards: updatedNobleLine,
     },
@@ -142,7 +179,91 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
       createLogEntry(historyState, `${currentPlayer.name} took ${frontNoble.card.name} for ${frontNoble.card.points} points.`, playerId),
       ...historyState.log,
     ],
-    winnerIds: gameEnded ? getWinnerIds(updatedPlayers) : [],
+    winnerIds: [],
+  };
+
+  if (updatedNobleLine.length === 0) {
+    return endCurrentDay(nextState, `Day ${nextState.day} ended because the noble line is empty.`);
+  }
+
+  const dayResolvedState = nextState.turnEffects.endDayAfterTurn
+    ? endCurrentDay(nextState, `Scarlet Pimpernel ended Day ${nextState.day}.`)
+    : nextState;
+
+  return dayResolvedState.phase === "gameEnd" ? dayResolvedState : showPassScreen(dayResolvedState);
+}
+
+function endCurrentDay(state: GameState, reason: string): GameState {
+  const discardedNobles = state.nobleLine.cards;
+  const nextDay = state.day + 1;
+  const baseLog = [
+    createLogEntry(
+      state,
+      `${reason} Discarded ${discardedNobles.length} noble${discardedNobles.length === 1 ? "" : "s"} from the line.`,
+    ),
+    ...state.log,
+  ];
+
+  if (state.day >= state.maxDays) {
+    return finishGame({
+      ...state,
+      nobleDeck: {
+        ...state.nobleDeck,
+        discardPile: [...discardedNobles, ...state.nobleDeck.discardPile],
+      },
+      nobleLine: {
+        cards: [],
+      },
+      log: baseLog,
+    });
+  }
+
+  const nextLine = state.nobleDeck.drawPile.slice(0, NOBLE_LINE_SIZE);
+  const remainingNobleDeck = state.nobleDeck.drawPile.slice(nextLine.length);
+
+  if (nextLine.length === 0) {
+    return finishGame({
+      ...state,
+      nobleDeck: {
+        drawPile: [],
+        discardPile: [...discardedNobles, ...state.nobleDeck.discardPile],
+      },
+      nobleLine: {
+        cards: [],
+      },
+      log: baseLog,
+    });
+  }
+
+  return showPassScreen({
+    ...state,
+    day: nextDay,
+    phase: "playing",
+    turnStep: "playActionOptional",
+    turnEffects: {
+      endDayAfterTurn: false,
+    },
+    passScreen: {
+      visible: false,
+    },
+    nobleDeck: {
+      drawPile: remainingNobleDeck,
+      discardPile: [...discardedNobles, ...state.nobleDeck.discardPile],
+    },
+    nobleLine: {
+      cards: nextLine,
+    },
+    log: baseLog,
+    winnerIds: [],
+  });
+}
+
+function showPassScreen(state: GameState): GameState {
+  return {
+    ...state,
+    passScreen: {
+      visible: true,
+    },
   };
 }
 
@@ -163,7 +284,23 @@ function createLogEntry(state: GameState, message: string, playerId?: PlayerId):
   };
 }
 
+function finishGame(state: GameState): GameState {
+  return {
+    ...state,
+    phase: "gameEnd",
+    passScreen: {
+      visible: false,
+    },
+    turnEffects: {
+      endDayAfterTurn: false,
+    },
+    winnerIds: getWinnerIds(state.players),
+  };
+}
+
 function getWinnerIds(players: Player[]): string[] {
   const highScore = Math.max(...players.map((player) => player.score));
   return players.filter((player) => player.score === highScore).map((player) => player.id);
 }
+
+

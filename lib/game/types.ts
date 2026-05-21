@@ -30,6 +30,23 @@ export interface ActionCard extends BaseCard {
 }
 
 export type ActionEffectKey =
+  | "notImplemented"
+  | "friendOfTheQueen"
+  | "pushed"
+  | "stumble"
+  | "ignobleNoble"
+  | "extraCart"
+  | "politicalInfluence"
+  | "doubleFeature"
+  | "lIdiot"
+  | "letThemEatCake"
+  | "tisFarBetterThing"
+  | "wasThatMyName"
+  | "forwardMarch"
+  | "scarletPimpernel"
+  | "bribedGuards"
+  | "publicDemand"
+  | "theLongWalk"
   | "moveFrontNobleBackOne"
   | "moveBackNobleForwardOne"
   | "swapFirstTwoNobles"
@@ -65,6 +82,14 @@ export interface GameLogEntry {
   playerId?: PlayerId;
 }
 
+export interface PassScreenState {
+  visible: boolean;
+}
+
+export interface TurnEffectsState {
+  endDayAfterTurn: boolean;
+}
+
 export interface GameSnapshot {
   state: Omit<GameState, "gameHistory">;
   reason: string;
@@ -78,6 +103,8 @@ export interface GameState {
   players: Player[];
   currentPlayerIndex: number;
   turnStep: TurnStep;
+  passScreen: PassScreenState;
+  turnEffects: TurnEffectsState;
   nobleDeck: DeckState<NobleCard>;
   actionDeck: DeckState<ActionCard>;
   nobleLine: NobleLine;
@@ -87,12 +114,14 @@ export interface GameState {
 }
 
 export type ActionTarget =
+  | { type: "move-noble"; instanceId: CardInstanceId; spaces: number }
   | { type: "noble"; instanceId: CardInstanceId }
   | { type: "noble-position"; index: number }
   | { type: "player"; playerId: PlayerId };
 
 export type GameCommand =
   | { type: "START_GAME"; playerNames: string[] }
+  | { type: "READY_FOR_TURN" }
   | {
       type: "PLAY_ACTION_CARD";
       playerId: PlayerId;
@@ -103,3 +132,4 @@ export type GameCommand =
   | { type: "END_TURN"; playerId: PlayerId }
   | { type: "START_NEXT_DAY" }
   | { type: "UNDO_LAST_ACTION" };
+

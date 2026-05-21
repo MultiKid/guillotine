@@ -1,5 +1,6 @@
-﻿import { placeholderActions } from "@/lib/cards/actions.placeholder";
-import { placeholderNobles } from "@/lib/cards/nobles.placeholder";
+﻿import { actionDefinitions, ACTION_DECK_SIZE } from "@/lib/cards/actions";
+import { getDefinitionCount } from "@/lib/cards/definitions";
+import { nobleDefinitions, NOBLE_DECK_SIZE } from "@/lib/cards/nobles";
 import {
   MAX_DAYS,
   MAX_PLAYERS,
@@ -7,7 +8,7 @@ import {
   NOBLE_LINE_SIZE,
   STARTING_HAND_SIZE,
 } from "@/lib/game/constants";
-import { createCardInstances, shuffleDeck } from "@/lib/game/deck";
+import { createCardInstancesFromDefinitions, shuffleDeck } from "@/lib/game/deck";
 import { calculatePlayerScore } from "@/lib/game/scoring";
 import type { ActionCard, CardInstance, GameState, NobleCard, Player } from "@/lib/game/types";
 
@@ -19,6 +20,12 @@ export function createInitialGameState(): GameState {
     players: [],
     currentPlayerIndex: 0,
     turnStep: "playActionOptional",
+    passScreen: {
+      visible: false,
+    },
+    turnEffects: {
+      endDayAfterTurn: false,
+    },
     nobleDeck: {
       drawPile: [],
       discardPile: [],
@@ -43,8 +50,10 @@ export function createLocalGameState(playerNames: string[]): GameState {
     throw new Error(`Local games require ${MIN_PLAYERS}-${MAX_PLAYERS} players.`);
   }
 
-  const actionDrawPile = shuffleDeck(createCardInstances(placeholderActions, 10));
-  const nobleDrawPile = shuffleDeck(createCardInstances(placeholderNobles, 6));
+  validateDeckSizes();
+
+  const actionDrawPile = shuffleDeck(createCardInstancesFromDefinitions(actionDefinitions));
+  const nobleDrawPile = shuffleDeck(createCardInstancesFromDefinitions(nobleDefinitions));
   const { players, remainingActions } = dealPlayers(cleanedNames, actionDrawPile);
   const nobleLineCards = nobleDrawPile.slice(0, NOBLE_LINE_SIZE);
 
@@ -77,6 +86,19 @@ export function createLocalGameState(playerNames: string[]): GameState {
   };
 }
 
+function validateDeckSizes() {
+  const nobleCount = getDefinitionCount(nobleDefinitions);
+  const actionCount = getDefinitionCount(actionDefinitions);
+
+  if (nobleCount !== NOBLE_DECK_SIZE) {
+    throw new Error(`Expected ${NOBLE_DECK_SIZE} noble cards, received ${nobleCount}.`);
+  }
+
+  if (actionCount !== ACTION_DECK_SIZE) {
+    throw new Error(`Expected ${ACTION_DECK_SIZE} action cards, received ${actionCount}.`);
+  }
+}
+
 function dealPlayers(
   names: string[],
   actionDrawPile: CardInstance<ActionCard>[],
@@ -98,3 +120,5 @@ function dealPlayers(
 
   return { players, remainingActions };
 }
+
+
