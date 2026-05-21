@@ -1,4 +1,6 @@
 ﻿import { calculatePlayerScore } from "@/lib/game/scoring";
+import { STARTING_HAND_SIZE } from "@/lib/game/constants";
+import { shuffleDeck } from "@/lib/game/deck";
 import type {
   ActionEffectKey,
   ActionTarget,
@@ -28,6 +30,7 @@ type ActionEffectResult = {
   applied: boolean;
   message: string;
   endsTurn?: boolean;
+  allowsAnotherAction?: boolean;
   logMessage?: string;
   skipEmptyLineDayEnd?: boolean;
 };
@@ -107,6 +110,20 @@ export const actionEffects: Record<ActionEffectKey, ActionEffectDefinition> = {
     label: "Move a Green noble forward up to 2 places",
     colorCategory: "green",
   }),
+  trip: createMoveEffect({
+    label: "Move a noble backward exactly 1 place, then play another action",
+    direction: "backward",
+    spaces: [1],
+    allowsAnotherAction: true,
+  }),
+  faintingSpell: createMoveEffect({
+    label: "Move a noble backward up to 3 places",
+    direction: "backward",
+    spaces: [1, 2, 3],
+  }),
+  fledToEngland: createDiscardNobleEffect(),
+  forcedBreak: createImmediateEffect("All other players discard one random action card", forceOtherPlayersToDiscard),
+  rainDelay: createImmediateEffect("Shuffle all hands into the action deck and redeal hands", shuffleHandsAndRedeal),
   extraCart: createImmediateEffect("Add 3 nobles to the end of the line", addExtraCartNobles),
   politicalInfluence: createImmediateEffect("Draw 3 action cards and end this turn", drawPoliticalInfluenceCards),
   doubleFeature: createImmediateEffect("Take an extra front noble immediately", takeExtraFrontNoble),
@@ -201,6 +218,7 @@ function createMoveEffect(config: {
   direction: "forward" | "backward";
   spaces: number[];
   predicate?: (noble: CardInstance<NobleCard>) => boolean;
+  allowsAnotherAction?: boolean;
 }): ActionEffectDefinition {
   return {
     label: config.label,
@@ -225,12 +243,32 @@ function createMoveToFrontEffect(config: {
   };
 }
 
+function createDiscardNobleEffect(): ActionEffectDefinition {
+  return {
+    label: "Discard any noble in line",
+    requiresTarget: true,
+    canApply: (state) => state.nobleLine.cards.length > 0,
+    getValidTargets: (state) =>
+      state.nobleLine.cards.map((noble, index) => ({
+        target: {
+          type: "noble" as const,
+          instanceId: noble.instanceId,
+        },
+        label: `Discard ${noble.card.name} from position ${index + 1}`,
+        nobleName: noble.card.name,
+        fromPosition: index + 1,
+      })),
+    apply: discardNobleTarget,
+  };
+}
+
 function getMoveTargets(
   state: GameState,
   config: {
     direction: "forward" | "backward";
     spaces: number[];
     predicate?: (noble: CardInstance<NobleCard>) => boolean;
+    allowsAnotherAction?: boolean;
   },
 ): ValidActionTarget[] {
   return state.nobleLine.cards.flatMap((noble, index) =>
@@ -294,6 +332,7 @@ function applyMoveTarget(
     direction: "forward" | "backward";
     spaces: number[];
     predicate?: (noble: CardInstance<NobleCard>) => boolean;
+    allowsAnotherAction?: boolean;
   },
 ): ActionEffectResult {
   if (!target || target.type !== "move-noble") {
@@ -327,6 +366,7 @@ function applyMoveTarget(
     state: withNobleLine(state, cards),
     applied: true,
     message: `moved ${noble.card.name} from position ${fromIndex + 1} to ${toIndex + 1}`,
+    allowsAnotherAction: config.allowsAnotherAction,
   };
 }
 
@@ -383,6 +423,101 @@ function moveMarieAntoinetteToFront(state: GameState): ActionEffectResult {
   }
 
   return moveNobleToIndex(state, fromIndex, 0);
+}
+
+function discardNobleTarget(state: GameState, context: ActionEffectContext): ActionEffectResult {
+  const target = context.target;
+
+  if (!target || target.type !== "noble") {
+    return invalidResult(state, "requires a noble target to discard");
+  }
+
+  const targetIndex = state.nobleLine.cards.findIndex((noble) => noble.instanceId === target.instanceId);
+  const noble = state.nobleLine.cards[targetIndex];
+
+  if (targetIndex < 0 || !noble) {
+    return invalidResult(state, "does not have a legal noble to discard");
+  }
+
+  return {
+    state: {
+      ...state,
+      nobleLine: {
+        cards: state.nobleLine.cards.filter((card) => card.instanceId !== target.instanceId),
+      },
+      nobleDeck: {
+        ...state.nobleDeck,
+        discardPile: [noble, ...state.nobleDeck.discardPile],
+      },
+    },
+    applied: true,
+    message: `discarded ${noble.card.name} from the line`,
+  };
+}
+
+function forceOtherPlayersToDiscard(state: GameState, context: ActionEffectContext): ActionEffectResult {
+  const discardedCards: GameState["actionDeck"]["discardPile"] = [];
+
+  const players = state.players.map((player) => {
+    if (player.id === context.playerId || player.hand.length === 0) {
+      return player;
+    }
+
+    const discardIndex = Math.floor(Math.random() * player.hand.length);
+    const discardedCard = player.hand[discardIndex];
+
+    if (!discardedCard) {
+      return player;
+    }
+
+    discardedCards.push(discardedCard);
+
+    return {
+      ...player,
+      hand: player.hand.filter((_, index) => index !== discardIndex),
+    };
+  });
+
+  return {
+    state: {
+      ...state,
+      players,
+      actionDeck: {
+        ...state.actionDeck,
+        discardPile: [...discardedCards, ...state.actionDeck.discardPile],
+      },
+    },
+    applied: true,
+    message: `made ${discardedCards.length} other player${discardedCards.length === 1 ? "" : "s"} discard a random action card`,
+  };
+}
+
+function shuffleHandsAndRedeal(state: GameState): ActionEffectResult {
+  const cardsFromHands = state.players.flatMap((player) => player.hand);
+  let actionPool = shuffleDeck([...state.actionDeck.drawPile, ...cardsFromHands]);
+
+  const players = state.players.map((player) => {
+    const newHand = actionPool.slice(0, STARTING_HAND_SIZE);
+    actionPool = actionPool.slice(newHand.length);
+
+    return {
+      ...player,
+      hand: newHand,
+    };
+  });
+
+  return {
+    state: {
+      ...state,
+      players,
+      actionDeck: {
+        ...state.actionDeck,
+        drawPile: actionPool,
+      },
+    },
+    applied: true,
+    message: `shuffled all hands into the action deck and dealt new hands of up to ${STARTING_HAND_SIZE} cards`,
+  };
 }
 
 function moveNearestBlueNobleToFront(state: GameState): ActionEffectResult {

@@ -1,6 +1,7 @@
 ﻿import { createLocalGameState } from "@/lib/game/createGame";
 import { applyActionEffect, canApplyActionEffect } from "@/lib/game/effects";
-import { NOBLE_LINE_SIZE } from "@/lib/game/constants";
+import { NOBLE_LINE_SIZE, STARTING_HAND_SIZE } from "@/lib/game/constants";
+import { shuffleDeck } from "@/lib/game/deck";
 import { pushGameHistory, undoLastAction } from "@/lib/game/history";
 import { calculatePlayerScore } from "@/lib/game/scoring";
 import type {
@@ -19,6 +20,8 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
       return createLocalGameState(command.playerNames);
     case "READY_FOR_TURN":
       return readyForTurn(state);
+    case "RELOAD_TEST_HAND":
+      return state.passScreen.visible ? state : reloadTestHand(state, command.playerId);
     case "UNDO_LAST_ACTION":
       return undoLastAction(state);
     case "PLAY_ACTION_CARD":
@@ -31,6 +34,53 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
     default:
       return state;
   }
+}
+
+function reloadTestHand(state: GameState, playerId: PlayerId): GameState {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+
+  if (state.phase !== "playing" || !currentPlayer || currentPlayer.id !== playerId) {
+    return state;
+  }
+
+  const historyState = pushGameHistory(state, `${currentPlayer.name} reloaded their test hand.`);
+  const player = historyState.players.find((candidate) => candidate.id === playerId);
+
+  if (!player) {
+    return state;
+  }
+
+  const testPool = shuffleDeck([
+    ...player.hand,
+    ...historyState.actionDeck.drawPile,
+    ...historyState.actionDeck.discardPile,
+  ]);
+  const newHand = testPool.slice(0, STARTING_HAND_SIZE);
+  const remainingActions = testPool.slice(newHand.length);
+
+  return {
+    ...historyState,
+    players: historyState.players.map((candidate) =>
+      candidate.id === playerId
+        ? {
+            ...candidate,
+            hand: newHand,
+          }
+        : candidate,
+    ),
+    actionDeck: {
+      drawPile: remainingActions,
+      discardPile: [],
+    },
+    log: [
+      createLogEntry(
+        historyState,
+        `${currentPlayer.name} reloaded a fresh test hand of ${newHand.length} action card${newHand.length === 1 ? "" : "s"}.`,
+        playerId,
+      ),
+      ...historyState.log,
+    ],
+  };
 }
 
 function readyForTurn(state: GameState): GameState {
@@ -124,7 +174,7 @@ function playActionCard(
 
   return {
     ...stateWithDiscard,
-    turnStep: "takeNobleRequired",
+    turnStep: result.allowsAnotherAction ? "playActionOptional" : "takeNobleRequired",
   };
 }
 

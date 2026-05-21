@@ -53,6 +53,15 @@ export function GameBoard() {
     setSelectedActionCardId(undefined);
   }
 
+  function reloadTestHand() {
+    if (!currentPlayer) {
+      return;
+    }
+
+    dispatch({ type: "RELOAD_TEST_HAND", playerId: currentPlayer.id });
+    setSelectedActionCardId(undefined);
+  }
+
   function undo() {
     dispatch({ type: "UNDO_LAST_ACTION" });
     setSelectedActionCardId(undefined);
@@ -107,6 +116,7 @@ export function GameBoard() {
           canPlayActionCard={canPlayActionCard}
           onSelectAction={setSelectedActionCardId}
           onPlayAction={playAction}
+          onReloadTestHand={reloadTestHand}
         />
         <TurnControls
           canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}

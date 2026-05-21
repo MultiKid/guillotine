@@ -95,6 +95,26 @@ const implementedActions: Record<string, { effectKey: ActionEffectKey; descripti
     effectKey: "civicPride",
     description: "Move a Green noble forward up to 2 places in line.",
   },
+  Trip: {
+    effectKey: "trip",
+    description: "Move a noble backward exactly 1 place in line. You may play another action card this turn.",
+  },
+  "Fainting Spell": {
+    effectKey: "faintingSpell",
+    description: "Move a noble backward up to 3 places in line.",
+  },
+  "Fled to England": {
+    effectKey: "fledToEngland",
+    description: "Discard any noble in line.",
+  },
+  "Forced Break": {
+    effectKey: "forcedBreak",
+    description: "All other players must discard an action card at random.",
+  },
+  "Rain Delay": {
+    effectKey: "rainDelay",
+    description: "Shuffle all players' hands into the action deck and deal out 5 new action cards to each player.",
+  },
 };
 
 const actionNames = [

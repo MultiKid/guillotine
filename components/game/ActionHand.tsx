@@ -12,6 +12,7 @@ type ActionHandProps = {
   canPlayActionCard: (card: CardInstance<ActionCard>) => boolean;
   onSelectAction: (cardId: CardInstanceId) => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
+  onReloadTestHand: () => void;
 };
 
 export function ActionHand({
@@ -22,6 +23,7 @@ export function ActionHand({
   canPlayActionCard,
   onSelectAction,
   onPlayAction,
+  onReloadTestHand,
 }: ActionHandProps) {
   const selectedAction = player?.hand.find((action) => action.instanceId === selectedActionCardId);
 
@@ -29,7 +31,12 @@ export function ActionHand({
     <Card>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">{player ? `${player.name}'s Hand` : "Action Hand"}</h2>
-        <span className="text-sm text-stone-600">{canPlayActions ? "May play one action" : "Action already played"}</span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="text-sm text-stone-600">{canPlayActions ? "May play one action" : "Action already played"}</span>
+          <Button disabled={!player} onClick={onReloadTestHand}>
+            Reload Test Hand
+          </Button>
+        </div>
       </div>
 
       {selectedAction ? (

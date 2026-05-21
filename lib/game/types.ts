@@ -54,6 +54,11 @@ export type ActionEffectKey =
   | "militaryMight"
   | "majesty"
   | "civicPride"
+  | "trip"
+  | "faintingSpell"
+  | "fledToEngland"
+  | "forcedBreak"
+  | "rainDelay"
   | "moveFrontNobleBackOne"
   | "moveBackNobleForwardOne"
   | "swapFirstTwoNobles"
@@ -129,6 +134,7 @@ export type ActionTarget =
 export type GameCommand =
   | { type: "START_GAME"; playerNames: string[] }
   | { type: "READY_FOR_TURN" }
+  | { type: "RELOAD_TEST_HAND"; playerId: PlayerId }
   | {
       type: "PLAY_ACTION_CARD";
       playerId: PlayerId;
