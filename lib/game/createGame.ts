@@ -113,7 +113,11 @@ function dealPlayers(
       id: `player-${index + 1}`,
       name,
       hand,
+      inFrontActions: [],
       collectedNobles: [] as CardInstance<NobleCard>[],
+      skipNextActionTurn: false,
+      skipActionThisTurn: false,
+      shuffleLineBeforeNextCollection: false,
       score: 0,
     };
   });

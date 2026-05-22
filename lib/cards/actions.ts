@@ -115,6 +115,90 @@ const implementedActions: Record<string, { effectKey: ActionEffectKey; descripti
     effectKey: "rainDelay",
     description: "Shuffle all players' hands into the action deck and deal out 5 new action cards to each player.",
   },
+  "Mass Confusion": {
+    effectKey: "massConfusion",
+    description: "Put all nobles in line in the noble deck. Shuffle the noble deck and deal out the same number of nobles in a new line.",
+  },
+  "Escape!": {
+    effectKey: "escape",
+    description: "Randomly choose 2 nobles in line and discard them. Randomly rearrange the remaining nobles in line.",
+  },
+  "Milling in Line": {
+    effectKey: "millingInLine",
+    description: "Randomly rearrange the first 5 nobles in line.",
+  },
+  "Tough Crowd": {
+    effectKey: "toughCrowd",
+    description: "Put this card in front of another player. It is worth -2 points to that player.",
+  },
+  "Military Support": {
+    effectKey: "militarySupport",
+    description: "Put this card in front of you. It is worth +1 point for each Red noble in your score pile.",
+  },
+  "Church Support": {
+    effectKey: "churchSupport",
+    description: "Put this card in front of you. It is worth +1 point for each Blue noble in your score pile.",
+  },
+  "Civic Support": {
+    effectKey: "civicSupport",
+    description: "Put this card in front of you. It is worth +1 point for each Green noble in your score pile.",
+  },
+  "Fountain of Blood": {
+    effectKey: "fountainOfBlood",
+    description: "Put this card in front of you. It is worth 2 points.",
+  },
+  "Indifferent Public": {
+    effectKey: "indifferentPublic",
+    description: "Put this card in front of you. Any Gray nobles in your score pile are worth 1 point instead of their normal values.",
+  },
+  "Foreign Support": {
+    effectKey: "foreignSupport",
+    description: "Put this card in front of you. Draw an action card whenever you collect a Purple noble.",
+  },
+  "Opinionated Guards": {
+    effectKey: "opinionatedGuards",
+    description: "Rearrange the first 4 nobles in line any way you wish.",
+  },
+  "Late Arrival": {
+    effectKey: "lateArrival",
+    description: "Look at the top 3 cards of the noble deck and add any one of them to the end of the line.",
+  },
+  "Rat Break": {
+    effectKey: "ratBreak",
+    description: "Put an action card of your choice from the discard pile into your hand.",
+  },
+  "Missed!": {
+    effectKey: "missed",
+    description: "Choose a player. That player must place the last noble he or she collected at the end of the line.",
+  },
+  "Rush Job": {
+    effectKey: "rushJob",
+    description: "Choose a player. That player cannot play an action card on his or her next turn.",
+  },
+  "Information Exchange": {
+    effectKey: "informationExchange",
+    description: "Trade hands with another player.",
+  },
+  "Twist of Fate": {
+    effectKey: "twistOfFate",
+    description: "Put any action card in front of any player into the discard pile.",
+  },
+  "After You...": {
+    effectKey: "afterYou",
+    description: "Put the noble at the front of the line into another player's score pile.",
+  },
+  "Clothing Swap": {
+    effectKey: "clothingSwap",
+    description: "Choose any noble in line and discard it. Replace it with the top noble from the noble deck.",
+  },
+  "Confusion in Line": {
+    effectKey: "confusionInLine",
+    description: "Choose a player. Randomly rearrange the line just before that player collects his or her next noble.",
+  },
+  "Missing Heads": {
+    effectKey: "missingHeads",
+    description: "Choose a player. That player loses a random noble from his or her score pile.",
+  },
 };
 
 const actionNames = [

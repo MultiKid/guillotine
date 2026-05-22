@@ -2,12 +2,13 @@
 
 import { useReducer, useState } from "react";
 import { ActionHand } from "@/components/game/ActionHand";
+import { CollectedNobles } from "@/components/game/CollectedNobles";
 import { DayTracker } from "@/components/game/DayTracker";
 import { GameHistory } from "@/components/game/GameHistory";
 import { NobleLine } from "@/components/game/NobleLine";
 import { PassTurnScreen } from "@/components/game/PassTurnScreen";
+import { PersistentActionCards } from "@/components/game/PersistentActionCards";
 import { PlayerPanel } from "@/components/game/PlayerPanel";
-import { ScorePanel } from "@/components/game/ScorePanel";
 import { TurnControls } from "@/components/game/TurnControls";
 import { LocalGameSetup } from "@/components/setup/LocalGameSetup";
 import { createInitialGameState } from "@/lib/game/createGame";
@@ -19,8 +20,17 @@ import type { ActionCard, ActionTarget, CardInstance, CardInstanceId } from "@/l
 export function GameBoard() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
   const [selectedActionCardId, setSelectedActionCardId] = useState<CardInstanceId | undefined>();
+  const [selectedPersistentPlayerId, setSelectedPersistentPlayerId] = useState<string | undefined>();
   const currentPlayer = selectCurrentPlayer(state);
-  const canPlayActions = state.phase === "playing" && state.turnStep === "playActionOptional" && Boolean(currentPlayer);
+  const persistentPlayerId =
+    state.players.some((player) => player.id === selectedPersistentPlayerId)
+      ? selectedPersistentPlayerId
+      : currentPlayer?.id;
+  const canPlayActions =
+    state.phase === "playing" &&
+    state.turnStep === "playActionOptional" &&
+    Boolean(currentPlayer) &&
+    !currentPlayer?.skipActionThisTurn;
   const selectedAction = currentPlayer?.hand.find((action) => action.instanceId === selectedActionCardId);
   const validTargets =
     currentPlayer && selectedAction
@@ -83,19 +93,20 @@ export function GameBoard() {
   }
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[280px_1fr_280px]">
-      <div className="flex flex-col gap-4">
+    <section className="flex flex-col gap-4">
+      <div className="grid gap-4 lg:grid-cols-[220px_260px_1fr]">
         <DayTracker day={state.day} maxDays={state.maxDays} />
-        <ScorePanel players={state.players} winnerIds={state.winnerIds} />
-        <GameHistory log={state.log} />
-      </div>
-      <div className="flex flex-col gap-4">
-        <div className="rounded-lg border border-stone-300 bg-white p-4 shadow-sm">
+        <div className="rounded-lg border border-stone-300 bg-white p-3 shadow-sm">
           <p className="text-sm text-stone-600">Current Turn</p>
-          <h2 className="text-2xl font-bold">{currentPlayer?.name ?? "No player"}</h2>
+          <h2 className="text-xl font-bold">{currentPlayer?.name ?? "No player"}</h2>
           <p className="mt-1 text-sm text-stone-600">
             {state.turnStep === "playActionOptional" ? "May play one action, then take a noble." : "Must take the front noble."}
           </p>
+          {currentPlayer?.skipActionThisTurn ? (
+            <p className="mt-2 rounded-md bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">
+              Rush Job: You cannot play an action card this turn.
+            </p>
+          ) : null}
           {state.turnEffects.endDayAfterTurn ? (
             <p className="mt-2 rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-900">
               Scarlet Pimpernel is active: this day will end after this turn.
@@ -107,27 +118,48 @@ export function GameBoard() {
             </p>
           ) : null}
         </div>
-        <NobleLine nobles={state.nobleLine.cards} validTargets={validTargets} />
-        <ActionHand
-          canPlayActions={canPlayActions}
-          player={currentPlayer}
-          selectedActionCardId={selectedActionCardId}
-          validTargets={validTargets}
-          canPlayActionCard={canPlayActionCard}
-          onSelectAction={setSelectedActionCardId}
-          onPlayAction={playAction}
-          onReloadTestHand={reloadTestHand}
-        />
-        <TurnControls
-          canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}
-          canUndo={state.gameHistory.length > 0}
-          currentPlayerId={currentPlayer?.id}
-          turnStep={state.turnStep}
-          onTakeNoble={takeNoble}
-          onUndo={undo}
-        />
+        <PlayerPanel players={state.players} currentPlayerId={currentPlayer?.id} />
       </div>
-      <PlayerPanel players={state.players} currentPlayerId={currentPlayer?.id} />
+
+      <NobleLine nobles={state.nobleLine.cards} validTargets={validTargets} />
+
+      <div className="grid gap-4 lg:grid-cols-[280px_1fr_280px]">
+        <div className="flex flex-col gap-4">
+          <PersistentActionCards
+            players={state.players}
+            selectedPlayerId={persistentPlayerId}
+            onSelectPlayer={setSelectedPersistentPlayerId}
+            selectedActionCardId={selectedActionCardId}
+            validTargets={validTargets}
+            onPlayAction={playAction}
+          />
+          <GameHistory log={state.log} />
+        </div>
+        <div className="flex flex-col gap-4">
+          <ActionHand
+            canPlayActions={canPlayActions}
+            player={currentPlayer}
+            selectedActionCardId={selectedActionCardId}
+            validTargets={validTargets}
+            canPlayActionCard={canPlayActionCard}
+            onSelectAction={setSelectedActionCardId}
+            onClearSelection={() => setSelectedActionCardId(undefined)}
+            onPlayAction={playAction}
+            onReloadTestHand={reloadTestHand}
+          />
+          <CollectedNobles player={currentPlayer} />
+        </div>
+        <div className="flex flex-col gap-4">
+          <TurnControls
+            canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}
+            canUndo={state.gameHistory.length > 0}
+            currentPlayerId={currentPlayer?.id}
+            turnStep={state.turnStep}
+            onTakeNoble={takeNoble}
+            onUndo={undo}
+          />
+        </div>
+      </div>
     </section>
   );
 }

@@ -59,6 +59,27 @@ export type ActionEffectKey =
   | "fledToEngland"
   | "forcedBreak"
   | "rainDelay"
+  | "massConfusion"
+  | "escape"
+  | "millingInLine"
+  | "toughCrowd"
+  | "militarySupport"
+  | "churchSupport"
+  | "civicSupport"
+  | "fountainOfBlood"
+  | "indifferentPublic"
+  | "foreignSupport"
+  | "opinionatedGuards"
+  | "lateArrival"
+  | "ratBreak"
+  | "missed"
+  | "rushJob"
+  | "informationExchange"
+  | "twistOfFate"
+  | "afterYou"
+  | "clothingSwap"
+  | "confusionInLine"
+  | "missingHeads"
   | "moveFrontNobleBackOne"
   | "moveBackNobleForwardOne"
   | "swapFirstTwoNobles"
@@ -74,7 +95,11 @@ export interface Player {
   id: PlayerId;
   name: string;
   hand: CardInstance<ActionCard>[];
+  inFrontActions: CardInstance<ActionCard>[];
   collectedNobles: CardInstance<NobleCard>[];
+  skipNextActionTurn: boolean;
+  skipActionThisTurn: boolean;
+  shuffleLineBeforeNextCollection: boolean;
   score: number;
 }
 
@@ -128,6 +153,10 @@ export interface GameState {
 export type ActionTarget =
   | { type: "move-noble"; instanceId: CardInstanceId; spaces: number }
   | { type: "noble"; instanceId: CardInstanceId }
+  | { type: "reorder-nobles"; instanceIds: CardInstanceId[] }
+  | { type: "noble-deck-card"; instanceId: CardInstanceId }
+  | { type: "action-discard-card"; instanceId: CardInstanceId }
+  | { type: "in-front-action"; playerId: PlayerId; instanceId: CardInstanceId }
   | { type: "noble-position"; index: number }
   | { type: "player"; playerId: PlayerId };
 

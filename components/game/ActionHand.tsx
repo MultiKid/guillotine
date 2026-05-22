@@ -1,5 +1,7 @@
-﻿import { Button } from "@/components/ui/Button";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { getNobleColorStyle } from "@/lib/cards/nobleColors";
 import { actionEffectRequiresTarget } from "@/lib/game/effects";
 import type { ValidActionTarget } from "@/lib/game/effects";
 import type { ActionCard, ActionTarget, CardInstance, CardInstanceId, Player } from "@/lib/game/types";
@@ -11,6 +13,7 @@ type ActionHandProps = {
   validTargets: ValidActionTarget[];
   canPlayActionCard: (card: CardInstance<ActionCard>) => boolean;
   onSelectAction: (cardId: CardInstanceId) => void;
+  onClearSelection: () => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
   onReloadTestHand: () => void;
 };
@@ -22,10 +25,39 @@ export function ActionHand({
   validTargets,
   canPlayActionCard,
   onSelectAction,
+  onClearSelection,
   onPlayAction,
   onReloadTestHand,
 }: ActionHandProps) {
   const selectedAction = player?.hand.find((action) => action.instanceId === selectedActionCardId);
+  const [reorderIds, setReorderIds] = useState<CardInstanceId[]>([]);
+  const isOpinionatedGuards = selectedAction?.card.effectKey === "opinionatedGuards";
+  const isLateArrival = selectedAction?.card.effectKey === "lateArrival";
+  const isTwistOfFate = selectedAction?.card.effectKey === "twistOfFate";
+
+  useEffect(() => {
+    if (!isOpinionatedGuards) {
+      setReorderIds([]);
+      return;
+    }
+
+    setReorderIds(validTargets.flatMap((target) => (target.target.type === "noble" ? [target.target.instanceId] : [])));
+  }, [isOpinionatedGuards, selectedActionCardId, validTargets]);
+
+  function moveReorderItem(instanceId: CardInstanceId, direction: -1 | 1) {
+    setReorderIds((currentIds) => {
+      const currentIndex = currentIds.indexOf(instanceId);
+      const nextIndex = currentIndex + direction;
+
+      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentIds.length) {
+        return currentIds;
+      }
+
+      const nextIds = [...currentIds];
+      [nextIds[currentIndex], nextIds[nextIndex]] = [nextIds[nextIndex], nextIds[currentIndex]];
+      return nextIds;
+    });
+  }
 
   return (
     <Card>
@@ -42,14 +74,71 @@ export function ActionHand({
       {selectedAction ? (
         <div className="mt-3 rounded-md border border-amber-400 bg-amber-50 p-3">
           <h3 className="font-semibold">Choose target for {selectedAction.card.name}</h3>
-          <p className="mt-1 text-sm text-stone-700">Only legal movement targets are shown.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {validTargets.map((target) => (
-              <Button key={`${target.target.type}-${target.target.type === "move-noble" ? target.target.instanceId : target.label}-${target.toPosition}`} onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
-                {target.label}
-              </Button>
-            ))}
-          </div>
+          <p className="mt-1 text-sm text-stone-700">Only legal targets are shown.</p>
+          {isOpinionatedGuards ? (
+            <div className="mt-3 flex flex-col gap-2">
+              {reorderIds.map((instanceId, index) => {
+                const target = validTargets.find(
+                  (candidate) => candidate.target.type === "noble" && candidate.target.instanceId === instanceId,
+                );
+
+                return (
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-white px-3 py-2" key={instanceId}>
+                    <span className="text-sm font-medium">{target?.nobleName ?? `Noble ${index + 1}`}</span>
+                    <div className="flex gap-1">
+                      <Button disabled={index === 0} onClick={() => moveReorderItem(instanceId, -1)}>
+                        Up
+                      </Button>
+                      <Button disabled={index === reorderIds.length - 1} onClick={() => moveReorderItem(instanceId, 1)}>
+                        Down
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  disabled={reorderIds.length === 0}
+                  onClick={() => onPlayAction(selectedAction.instanceId, { type: "reorder-nobles", instanceIds: reorderIds })}
+                >
+                  Confirm Order
+                </Button>
+                <Button onClick={onClearSelection}>Cancel</Button>
+              </div>
+            </div>
+          ) : isLateArrival ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {validTargets.map((target) => {
+                const noble = target.target.type === "noble-deck-card"
+                  ? target.revealedNoble
+                  : undefined;
+
+                if (!noble) {
+                  return null;
+                }
+
+                return (
+                  <div className={`rounded-md border p-2 ${getNobleColorStyle(noble.card.colorCategory)}`} key={noble.instanceId}>
+                    <h4 className="text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
+                    <p className="mt-1 text-xs text-stone-700">{noble.card.points} pts</p>
+                    <Button className="mt-3 w-full" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
+                      Select
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : isTwistOfFate ? (
+            <p className="mt-3 text-sm text-stone-700">Select a card in the Cards In Front panel, then confirm the discard.</p>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {validTargets.map((target) => (
+                <Button key={`${target.target.type}-${"instanceId" in target.target ? target.target.instanceId : target.label}-${target.toPosition}`} onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
+                  {target.label}
+                </Button>
+              ))}
+            </div>
+          )}
           {validTargets.length === 0 ? <p className="mt-2 text-sm text-stone-600">No legal targets for this card right now.</p> : null}
         </div>
       ) : null}

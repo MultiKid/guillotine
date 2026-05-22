@@ -1,5 +1,10 @@
 ﻿import { createLocalGameState } from "@/lib/game/createGame";
-import { applyActionEffect, canApplyActionEffect } from "@/lib/game/effects";
+import {
+  applyActionEffect,
+  applyBeforeNobleCollectionTriggers,
+  applyNobleCollectionTriggers,
+  canApplyActionEffect,
+} from "@/lib/game/effects";
 import { NOBLE_LINE_SIZE, STARTING_HAND_SIZE } from "@/lib/game/constants";
 import { shuffleDeck } from "@/lib/game/deck";
 import { pushGameHistory, undoLastAction } from "@/lib/game/history";
@@ -88,8 +93,29 @@ function readyForTurn(state: GameState): GameState {
     return state;
   }
 
+  const currentPlayer = state.players[state.currentPlayerIndex];
+
+  if (!currentPlayer?.skipNextActionTurn) {
+    return {
+      ...state,
+      passScreen: {
+        visible: false,
+      },
+    };
+  }
+
   return {
     ...state,
+    players: state.players.map((player) =>
+      player.id === currentPlayer.id
+        ? {
+            ...player,
+            skipNextActionTurn: false,
+            skipActionThisTurn: true,
+          }
+        : player,
+    ),
+    turnStep: "takeNobleRequired",
     passScreen: {
       visible: false,
     },
@@ -113,6 +139,10 @@ function playActionCard(
     return state;
   }
 
+  if (currentPlayer.skipActionThisTurn) {
+    return state;
+  }
+
   const actionCard = currentPlayer.hand.find((card) => card.instanceId === cardId);
 
   if (!actionCard || !canApplyActionEffect(state, actionCard.card.effectKey, { playerId, target })) {
@@ -132,7 +162,7 @@ function playActionCard(
     ),
   };
 
-  const result = applyActionEffect(stateWithoutCardInHand, actionCard.card.effectKey, { playerId, target });
+  const result = applyActionEffect(stateWithoutCardInHand, actionCard.card.effectKey, { playerId, target, actionCard });
 
   if (!result.applied) {
     return state;
@@ -145,7 +175,9 @@ function playActionCard(
     },
     actionDeck: {
       ...result.state.actionDeck,
-      discardPile: [actionCard, ...result.state.actionDeck.discardPile],
+      discardPile: result.skipDiscard
+        ? result.state.actionDeck.discardPile
+        : [actionCard, ...result.state.actionDeck.discardPile],
     },
     log: [
       createLogEntry(
@@ -153,6 +185,7 @@ function playActionCard(
         result.logMessage ?? `${currentPlayer.name} played ${actionCard.card.name} and ${result.message}.`,
         playerId,
       ),
+      ...(result.extraLogMessages ?? []).map((message) => createLogEntry(result.state, message, playerId)),
       ...result.state.log,
     ],
   };
@@ -180,17 +213,22 @@ function playActionCard(
 
 function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
   const currentPlayer = state.players[state.currentPlayerIndex];
-  const frontNoble = state.nobleLine.cards[0];
-
-  if (state.phase !== "playing" || !currentPlayer || currentPlayer.id !== playerId || !frontNoble) {
+  if (state.phase !== "playing" || !currentPlayer || currentPlayer.id !== playerId || state.nobleLine.cards.length === 0) {
     return state;
   }
 
-  const historyState = pushGameHistory(state, `${currentPlayer.name} took ${frontNoble.card.name}.`);
-  const [drawnAction, ...remainingActionDeck] = historyState.actionDeck.drawPile;
-  const updatedNobleLine = historyState.nobleLine.cards.slice(1);
+  const historyState = pushGameHistory(state, `${currentPlayer.name} took the front noble.`);
+  const confused = applyBeforeNobleCollectionTriggers(historyState, playerId);
+  const frontNoble = confused.state.nobleLine.cards[0];
 
-  const updatedPlayers = historyState.players.map((player) => {
+  if (!frontNoble) {
+    return state;
+  }
+
+  const [drawnAction, ...remainingActionDeck] = confused.state.actionDeck.drawPile;
+  const updatedNobleLine = confused.state.nobleLine.cards.slice(1);
+
+  const updatedPlayers = confused.state.players.map((player) => {
     if (player.id !== playerId) {
       return player;
     }
@@ -199,6 +237,7 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
       ...player,
       hand: drawnAction ? [...player.hand, drawnAction] : player.hand,
       collectedNobles: [...player.collectedNobles, frontNoble],
+      skipActionThisTurn: false,
     };
 
     return {
@@ -207,9 +246,9 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
     };
   });
 
-  const nextPlayerIndex = getNextPlayerIndex(historyState.currentPlayerIndex, historyState.players.length);
-  const nextState: GameState = {
-    ...historyState,
+  const nextPlayerIndex = getNextPlayerIndex(confused.state.currentPlayerIndex, confused.state.players.length);
+  const baseNextState: GameState = {
+    ...confused.state,
     phase: "playing",
     players: updatedPlayers,
     currentPlayerIndex: nextPlayerIndex,
@@ -218,18 +257,27 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
       visible: false,
     },
     actionDeck: {
-      ...historyState.actionDeck,
+      ...confused.state.actionDeck,
       drawPile: remainingActionDeck,
     },
-    nobleDeck: historyState.nobleDeck,
+    nobleDeck: confused.state.nobleDeck,
     nobleLine: {
       cards: updatedNobleLine,
     },
     log: [
-      createLogEntry(historyState, `${currentPlayer.name} took ${frontNoble.card.name} for ${frontNoble.card.points} points.`, playerId),
-      ...historyState.log,
+      createLogEntry(confused.state, `${currentPlayer.name} took ${frontNoble.card.name} for ${frontNoble.card.points} points.`, playerId),
+      ...confused.logMessages.map((message) => createLogEntry(confused.state, message, playerId)),
+      ...confused.state.log,
     ],
     winnerIds: [],
+  };
+  const triggered = applyNobleCollectionTriggers(baseNextState, playerId, frontNoble);
+  const nextState: GameState = {
+    ...triggered.state,
+    log: [
+      ...triggered.logMessages.map((message) => createLogEntry(triggered.state, message, playerId)),
+      ...triggered.state.log,
+    ],
   };
 
   if (updatedNobleLine.length === 0) {
