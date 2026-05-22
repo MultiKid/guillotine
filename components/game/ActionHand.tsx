@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { CardImage } from "@/components/ui/CardImage";
 import { getNobleColorStyle } from "@/lib/cards/nobleColors";
 import { actionEffectRequiresTarget } from "@/lib/game/effects";
 import { getNoblePointText } from "@/lib/game/scoring";
 import type { ValidActionTarget } from "@/lib/game/effects";
-import type { ActionCard, ActionTarget, CardInstance, CardInstanceId, Player } from "@/lib/game/types";
+import type { ActionCard, ActionTarget, BaseCard, CardInstance, CardInstanceId, Player, PlayerId } from "@/lib/game/types";
 
 type ActionHandProps = {
   canPlayActions: boolean;
@@ -17,7 +18,10 @@ type ActionHandProps = {
   onSelectAction: (cardId: CardInstanceId) => void;
   onClearSelection: () => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
-  onReloadTestHand: () => void;
+  onPreviewCard?: (card: BaseCard) => void;
+  canTakeNoble: boolean;
+  currentPlayerId?: PlayerId;
+  onTakeNoble: (playerId: PlayerId) => void;
 };
 
 export function ActionHand({
@@ -30,7 +34,10 @@ export function ActionHand({
   onSelectAction,
   onClearSelection,
   onPlayAction,
-  onReloadTestHand,
+  onPreviewCard,
+  canTakeNoble,
+  currentPlayerId,
+  onTakeNoble,
 }: ActionHandProps) {
   const selectedAction = player?.hand.find((action) => action.instanceId === selectedActionCardId);
   const [reorderIds, setReorderIds] = useState<CardInstanceId[]>([]);
@@ -77,8 +84,8 @@ export function ActionHand({
         <h2 className="text-lg font-semibold">{player ? `${player.name}'s Hand` : "Action Hand"}</h2>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-sm text-stone-600">{canPlayActions ? "May play one action" : "Action already played"}</span>
-          <Button disabled={!player} onClick={onReloadTestHand}>
-            Reload Test Hand
+          <Button disabled={!canTakeNoble || !currentPlayerId} onClick={() => currentPlayerId && onTakeNoble(currentPlayerId)}>
+            Take Front Noble
           </Button>
         </div>
       </div>
@@ -131,8 +138,22 @@ export function ActionHand({
 
                 return (
                   <div className={`rounded-md border p-2 ${getNobleColorStyle(noble.card.colorCategory)}`} key={noble.instanceId}>
-                    <h4 className="text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
-                    <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
+                    <CardImage
+                      alt={noble.card.name}
+                      className="cursor-pointer"
+                      imageClassName="aspect-[5/7] border border-stone-200"
+                      imagePath={noble.card.imagePath}
+                      onClick={() => onPreviewCard?.(noble.card)}
+                    >
+                      <div className="min-h-20 rounded-md bg-white/60 p-2">
+                        <h4 className="text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
+                        <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
+                      </div>
+                    </CardImage>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate font-semibold">{noble.card.name}</span>
+                      <span className="shrink-0">{getNoblePointText(noble)} pts</span>
+                    </div>
                     <Button className="mt-3 w-full" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
                       Select
                     </Button>
@@ -148,6 +169,7 @@ export function ActionHand({
               validTargets={validTargets}
               onSelectPlayer={setSelectedPrivateTargetPlayerId}
               onPlay={(target) => onPlayAction(selectedAction.instanceId, target)}
+              onPreviewCard={onPreviewCard}
             />
           ) : isCollectedNobleSelection ? (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -161,8 +183,22 @@ export function ActionHand({
                 return (
                   <div className={`rounded-md border p-2 ${getNobleColorStyle(noble.card.colorCategory)}`} key={`${target.playerId}-${noble.instanceId}`}>
                     <p className="text-xs font-semibold text-stone-600">{target.playerName}</p>
-                    <h4 className="mt-1 text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
-                    <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
+                    <CardImage
+                      alt={noble.card.name}
+                      className="mt-1 cursor-pointer"
+                      imageClassName="aspect-[5/7] border border-stone-200"
+                      imagePath={noble.card.imagePath}
+                      onClick={() => onPreviewCard?.(noble.card)}
+                    >
+                      <div className="min-h-20 rounded-md bg-white/60 p-2">
+                        <h4 className="text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
+                        <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
+                      </div>
+                    </CardImage>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate font-semibold">{noble.card.name}</span>
+                      <span className="shrink-0">{getNoblePointText(noble)} pts</span>
+                    </div>
                     <Button className="mt-3 w-full" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
                       Select
                     </Button>
@@ -183,7 +219,7 @@ export function ActionHand({
         </div>
       ) : null}
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-3 grid gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
         {player?.hand.map((action) => {
           const requiresTarget = actionEffectRequiresTarget(action.card.effectKey);
           const isSelected = action.instanceId === selectedActionCardId;
@@ -192,14 +228,25 @@ export function ActionHand({
 
           return (
             <div
-              className={`rounded-md border p-3 ${isSelected ? "border-amber-600 bg-amber-100" : "border-amber-300 bg-amber-50"}`}
+              className={`rounded-md border p-2 ${isSelected ? "border-amber-600 bg-amber-100" : "border-amber-300 bg-amber-50"}`}
               key={action.instanceId}
             >
-              <h3 className="font-semibold leading-snug">{action.card.name}</h3>
-              <p className="mt-1 text-sm text-stone-600">{action.card.description}</p>
+              <CardImage
+                alt={action.card.name}
+                className="cursor-pointer"
+                imageClassName="mx-auto max-h-40 aspect-[5/7] border border-amber-200 shadow-sm"
+                imagePath={action.card.imagePath}
+                onClick={() => onPreviewCard?.(action.card)}
+              >
+                <div>
+                  <h3 className="text-sm font-semibold leading-snug">{action.card.name}</h3>
+                  <p className="mt-1 text-xs text-stone-600">{action.card.description}</p>
+                </div>
+              </CardImage>
+              <h3 className="mt-2 text-sm font-semibold leading-snug">{action.card.name}</h3>
               {blockedReason ? <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-800">{blockedReason}</p> : null}
               <Button
-                className="mt-3 w-full"
+                className="mt-2 w-full px-2 py-1.5 text-xs"
                 disabled={!isPlayable}
                 onClick={() => (requiresTarget ? onSelectAction(action.instanceId) : onPlayAction(action.instanceId))}
               >
@@ -219,6 +266,7 @@ type PrivateHandTargetPickerProps = {
   validTargets: ValidActionTarget[];
   onSelectPlayer: (playerId: string) => void;
   onPlay: (target: ActionTarget) => void;
+  onPreviewCard?: (card: BaseCard) => void;
 };
 
 function PrivateHandTargetPicker({
@@ -226,6 +274,7 @@ function PrivateHandTargetPicker({
   validTargets,
   onSelectPlayer,
   onPlay,
+  onPreviewCard,
 }: PrivateHandTargetPickerProps) {
   const playerTargets = getPrivateHandPlayerTargets(validTargets);
   const selectedPlayerTargets = selectedPlayerId
@@ -263,8 +312,19 @@ function PrivateHandTargetPicker({
 
             return (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3" key={`${target.playerId}-${action.instanceId}`}>
-                <h4 className="font-semibold leading-tight">{action.card.name}</h4>
-                <p className="mt-1 text-xs text-stone-700">{action.card.description}</p>
+                <CardImage
+                  alt={action.card.name}
+                  className="cursor-pointer"
+                  imageClassName="aspect-[5/7] border border-amber-200"
+                  imagePath={action.card.imagePath}
+                  onClick={() => onPreviewCard?.(action.card)}
+                >
+                  <div>
+                    <h4 className="font-semibold leading-tight">{action.card.name}</h4>
+                    <p className="mt-1 text-xs text-stone-700">{action.card.description}</p>
+                  </div>
+                </CardImage>
+                <h4 className="mt-2 font-semibold leading-tight">{action.card.name}</h4>
                 <Button className="mt-3 w-full" onClick={() => onPlay(target.target)}>
                   Discard
                 </Button>

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import type { ActionTarget, CardInstanceId, Player, PlayerId } from "@/lib/game/types";
+import { CardImage } from "@/components/ui/CardImage";
+import type { ActionCard, ActionTarget, CardInstanceId, Player, PlayerId } from "@/lib/game/types";
 import type { ValidActionTarget } from "@/lib/game/effects";
 
 type PersistentActionCardsProps = {
@@ -14,6 +15,7 @@ type PersistentActionCardsProps = {
   currentPlayerId?: PlayerId;
   canDiscardCallousGuards?: boolean;
   onDiscardCallousGuards?: (cardId: CardInstanceId) => void;
+  onPreviewCard?: (card: ActionCard) => void;
 };
 
 export function PersistentActionCards({
@@ -26,6 +28,7 @@ export function PersistentActionCards({
   currentPlayerId,
   canDiscardCallousGuards = false,
   onDiscardCallousGuards,
+  onPreviewCard,
 }: PersistentActionCardsProps) {
   const [pendingTarget, setPendingTarget] = useState<ValidActionTarget | undefined>();
   const selectedPlayer = players.find((player) => player.id === selectedPlayerId) ?? players[0];
@@ -90,8 +93,21 @@ export function PersistentActionCards({
                 }`}
                 key={action.instanceId}
               >
-                <h3 className="text-sm font-semibold leading-snug">{action.card.name}</h3>
-                <p className="mt-1 text-xs text-stone-700">{action.card.description ?? "Persistent action modifier."}</p>
+                <div className="flex gap-2">
+                  <CardImage
+                    alt={action.card.name}
+                    className="w-14 shrink-0 cursor-pointer"
+                    imageClassName="aspect-[5/7] border border-amber-200"
+                    imagePath={action.card.imagePath}
+                    onClick={() => onPreviewCard?.(action.card)}
+                  >
+                    <div className="hidden" />
+                  </CardImage>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold leading-snug">{action.card.name}</h3>
+                    <p className="mt-1 text-xs text-stone-700">{action.card.description ?? "Persistent action modifier."}</p>
+                  </div>
+                </div>
                 {action.card.effectKey === "callousGuards" && selectedPlayer?.id === currentPlayerId && canDiscardCallousGuards ? (
                   <Button className="mt-2 w-full" onClick={() => onDiscardCallousGuards?.(action.instanceId)}>
                     Discard Callous Guards

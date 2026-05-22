@@ -272,12 +272,14 @@ const actionNames = [
 
 export const actionDefinitions: CardDefinition<ActionCard>[] = actionNames.map((name) => {
   const implemented = implementedActions[name];
+  const id = toCardId(name);
 
   return {
-    id: toCardId(name),
+    id,
     kind: "action",
     name,
     effectKey: implemented?.effectKey ?? "notImplemented",
+    imagePath: `/cards/actions/${getActionImageFileName(name, id)}`,
     quantity: duplicateActionNames.has(name) ? 2 : 1,
     description: implemented?.description ?? "Real Guillotine action card. Effect implementation is deferred.",
   };
@@ -291,6 +293,18 @@ function toCardId(name: string): string {
     .replace(/'/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function getActionImageFileName(name: string, id: string): string {
+  if (name === "'Tis a Far Better Thing") {
+    return "_tis-a-far-better-thing.jpg";
+  }
+
+  if (name === "L'Idiot") {
+    return "l_idiot.jpg";
+  }
+
+  return `${id}.jpg`;
 }
 
 

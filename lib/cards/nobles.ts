@@ -1,7 +1,7 @@
 ﻿import type { CardDefinition } from "@/lib/cards/definitions";
 import type { NobleCard } from "@/lib/game/types";
 
-export const nobleDefinitions: CardDefinition<NobleCard>[] = [
+const nobleDefinitionData: CardDefinition<NobleCard>[] = [
   { id: "archbishop", kind: "noble", name: "Archbishop", colorCategory: "blue", points: 4, group: "church", quantity: 1 },
   { id: "bad-nun", kind: "noble", name: "Bad Nun", colorCategory: "blue", points: 3, group: "church", quantity: 1 },
   { id: "baron", kind: "noble", name: "Baron", colorCategory: "purple", points: 3, group: "royal", quantity: 1 },
@@ -59,6 +59,11 @@ export const nobleDefinitions: CardDefinition<NobleCard>[] = [
   { id: "unpopular-judge", kind: "noble", name: "Unpopular Judge", colorCategory: "green", points: 2, group: "civic", quantity: 2 },
   { id: "wealthy-priest", kind: "noble", name: "Wealthy Priest", colorCategory: "blue", points: 1, group: "church", quantity: 2 },
 ];
+
+export const nobleDefinitions: CardDefinition<NobleCard>[] = nobleDefinitionData.map((card) => ({
+  ...card,
+  imagePath: `/cards/nobles/${card.id}.jpg`,
+}));
 
 export const NOBLE_DECK_SIZE = 50;
 

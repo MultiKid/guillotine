@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { CardImage } from "@/components/ui/CardImage";
+import { CardPreviewModal } from "@/components/ui/CardPreviewModal";
 import { getNobleColorStyle } from "@/lib/cards/nobleColors";
 import { getNoblePointText } from "@/lib/game/scoring";
-import type { CardInstanceId, PendingPrivateChoice, Player } from "@/lib/game/types";
+import type { BaseCard, CardInstanceId, PendingPrivateChoice, Player } from "@/lib/game/types";
 
 type PrivateChoicePanelProps = {
   pendingChoice: PendingPrivateChoice;
@@ -24,21 +26,31 @@ export function PrivateChoicePanel({
   onResolveInnocentVictimDiscard,
   onResolveClownGift,
 }: PrivateChoicePanelProps) {
+  const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
+
   if (pendingChoice.type === "infighting") {
     return (
-      <InfightingChoice
-        player={players.find((player) => player.id === pendingChoice.targetPlayerId)}
-        onConfirm={(cardIds) => onResolveInfighting(pendingChoice.targetPlayerId, cardIds)}
-      />
+      <>
+        <InfightingChoice
+          player={players.find((player) => player.id === pendingChoice.targetPlayerId)}
+          onConfirm={(cardIds) => onResolveInfighting(pendingChoice.targetPlayerId, cardIds)}
+          onPreviewCard={setPreviewCard}
+        />
+        <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(undefined)} />
+      </>
     );
   }
 
   if (pendingChoice.type === "innocentVictimDiscard") {
     return (
-      <InnocentVictimChoice
-        player={players.find((player) => player.id === pendingChoice.targetPlayerId)}
-        onConfirm={(cardId) => onResolveInnocentVictimDiscard(pendingChoice.targetPlayerId, cardId)}
-      />
+      <>
+        <InnocentVictimChoice
+          player={players.find((player) => player.id === pendingChoice.targetPlayerId)}
+          onConfirm={(cardId) => onResolveInnocentVictimDiscard(pendingChoice.targetPlayerId, cardId)}
+          onPreviewCard={setPreviewCard}
+        />
+        <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(undefined)} />
+      </>
     );
   }
 
@@ -70,8 +82,22 @@ export function PrivateChoicePanel({
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {eligibleNobles.map((noble) => (
                 <div className={`rounded-md border p-3 ${getNobleColorStyle(noble.card.colorCategory)}`} key={noble.instanceId}>
-                  <h2 className="font-semibold">{noble.card.name}</h2>
-                  <p className="mt-1 text-sm text-stone-700">{getNoblePointText(noble)} pts</p>
+                  <CardImage
+                    alt={noble.card.name}
+                    className="cursor-pointer"
+                    imageClassName="aspect-[5/7] border border-stone-200"
+                    imagePath={noble.card.imagePath}
+                    onClick={() => setPreviewCard(noble.card)}
+                  >
+                    <div className="min-h-20 rounded-md bg-white/60 p-2">
+                      <h2 className="font-semibold">{noble.card.name}</h2>
+                      <p className="mt-1 text-sm text-stone-700">{getNoblePointText(noble)} pts</p>
+                    </div>
+                  </CardImage>
+                  <div className="mt-1 flex items-center justify-between gap-2 text-sm">
+                    <span className="truncate font-semibold">{noble.card.name}</span>
+                    <span className="shrink-0 text-stone-700">{getNoblePointText(noble)} pts</span>
+                  </div>
                   <Button className="mt-3 w-full" onClick={() => onResolveClericalErrorReturn(pendingChoice.targetPlayerId, noble.instanceId)}>
                     Select
                   </Button>
@@ -88,6 +114,7 @@ export function PrivateChoicePanel({
           )}
         </Card>
       </div>
+      <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(undefined)} />
     </section>
   );
 }
@@ -131,9 +158,11 @@ function ClownGiftChoice({
 function InnocentVictimChoice({
   player,
   onConfirm,
+  onPreviewCard,
 }: {
   player?: Player;
   onConfirm: (cardId?: CardInstanceId) => void;
+  onPreviewCard: (card: BaseCard) => void;
 }) {
   return (
     <section className="fixed inset-0 z-40 min-h-screen overflow-auto bg-stone-100 p-6">
@@ -148,8 +177,19 @@ function InnocentVictimChoice({
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {player.hand.map((action) => (
                 <div className="rounded-md border border-amber-300 bg-amber-50 p-3" key={action.instanceId}>
-                  <h2 className="font-semibold">{action.card.name}</h2>
-                  <p className="mt-1 text-sm text-stone-700">{action.card.description}</p>
+                  <CardImage
+                    alt={action.card.name}
+                    className="cursor-pointer"
+                    imageClassName="aspect-[5/7] border border-amber-200"
+                    imagePath={action.card.imagePath}
+                    onClick={() => onPreviewCard(action.card)}
+                  >
+                    <div>
+                      <h2 className="font-semibold">{action.card.name}</h2>
+                      <p className="mt-1 text-sm text-stone-700">{action.card.description}</p>
+                    </div>
+                  </CardImage>
+                  <h2 className="mt-2 font-semibold">{action.card.name}</h2>
                   <Button className="mt-3 w-full" onClick={() => onConfirm(action.instanceId)}>
                     Discard
                   </Button>
@@ -173,9 +213,11 @@ function InnocentVictimChoice({
 function InfightingChoice({
   player,
   onConfirm,
+  onPreviewCard,
 }: {
   player?: Player;
   onConfirm: (cardIds: CardInstanceId[]) => void;
+  onPreviewCard: (card: BaseCard) => void;
 }) {
   const [selectedIds, setSelectedIds] = useState<CardInstanceId[]>([]);
   const requiredCount = Math.min(2, player?.hand.length ?? 0);
@@ -217,8 +259,22 @@ function InfightingChoice({
                     onClick={() => toggleCard(action.instanceId)}
                     type="button"
                   >
-                    <h2 className="font-semibold">{action.card.name}</h2>
-                    <p className="mt-1 text-sm text-stone-700">{action.card.description}</p>
+                    <CardImage
+                      alt={action.card.name}
+                      className="cursor-pointer"
+                      imageClassName="aspect-[5/7] border border-amber-200"
+                      imagePath={action.card.imagePath}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onPreviewCard(action.card);
+                      }}
+                    >
+                      <div>
+                        <h2 className="font-semibold">{action.card.name}</h2>
+                        <p className="mt-1 text-sm text-stone-700">{action.card.description}</p>
+                      </div>
+                    </CardImage>
+                    <h2 className="mt-2 font-semibold">{action.card.name}</h2>
                   </button>
                 );
               })}

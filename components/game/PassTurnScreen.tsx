@@ -3,12 +3,10 @@ import type { Player } from "@/lib/game/types";
 
 type PassTurnScreenProps = {
   nextPlayer?: Player;
-  canUndo: boolean;
   onReady: () => void;
-  onUndo: () => void;
 };
 
-export function PassTurnScreen({ nextPlayer, canUndo, onReady, onUndo }: PassTurnScreenProps) {
+export function PassTurnScreen({ nextPlayer, onReady }: PassTurnScreenProps) {
   return (
     <section className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-stone-950 px-6 text-white transition-opacity duration-200">
       <div className="w-full max-w-lg rounded-lg border border-stone-700 bg-stone-900 p-8 text-center shadow-2xl">
@@ -22,9 +20,6 @@ export function PassTurnScreen({ nextPlayer, canUndo, onReady, onUndo }: PassTur
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button className="border-amber-300 bg-amber-200 text-stone-950 hover:bg-amber-100" onClick={onReady}>
             Start Turn
-          </Button>
-          <Button className="border-stone-600 bg-stone-800 text-white hover:bg-stone-700" disabled={!canUndo} onClick={onUndo}>
-            Undo Last Action
           </Button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 ﻿import { Card } from "@/components/ui/Card";
+import { CardImage } from "@/components/ui/CardImage";
 import { getNobleColorStyle, selectedNobleColorStyle } from "@/lib/cards/nobleColors";
 import { getNoblePointText } from "@/lib/game/scoring";
 import type { CardInstance, NobleCard } from "@/lib/game/types";
@@ -7,9 +8,10 @@ import type { ValidActionTarget } from "@/lib/game/effects";
 type NobleLineProps = {
   nobles: CardInstance<NobleCard>[];
   validTargets?: ValidActionTarget[];
+  onPreviewCard?: (card: NobleCard) => void;
 };
 
-export function NobleLine({ nobles, validTargets = [] }: NobleLineProps) {
+export function NobleLine({ nobles, validTargets = [], onPreviewCard }: NobleLineProps) {
   const highlightedNobleIds = new Set(validTargets.map((target) => "instanceId" in target.target ? target.target.instanceId : ""));
 
   return (
@@ -26,8 +28,22 @@ export function NobleLine({ nobles, validTargets = [] }: NobleLineProps) {
           return (
             <div className={`min-h-28 rounded-md border p-2 transition-colors ${colorStyle}`} key={noble.instanceId}>
               <div className="text-[10px] font-semibold uppercase text-stone-500">Pos {index + 1}</div>
-              <h3 className="mt-1 break-words text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h3>
-              <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
+              <CardImage
+                alt={noble.card.name}
+                className="mt-1 cursor-pointer"
+                imageClassName="aspect-[5/7] border border-stone-200 shadow-sm"
+                imagePath={noble.card.imagePath}
+                onClick={() => onPreviewCard?.(noble.card)}
+              >
+                <div className="min-h-20 rounded-md bg-white/60 p-2">
+                  <h3 className="break-words text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h3>
+                  <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
+                </div>
+              </CardImage>
+              <div className="mt-1 flex items-center justify-between gap-1 text-xs">
+                <span className="truncate font-semibold text-stone-800">{noble.card.name}</span>
+                <span className="shrink-0 text-stone-700">{getNoblePointText(noble)} pts</span>
+              </div>
               {isValidTarget ? <p className="mt-2 text-xs font-semibold text-amber-800">Valid target</p> : null}
             </div>
           );

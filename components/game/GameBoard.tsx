@@ -7,12 +7,12 @@ import { DayTracker } from "@/components/game/DayTracker";
 import { GameHistory } from "@/components/game/GameHistory";
 import { NobleLine } from "@/components/game/NobleLine";
 import { PassTurnScreen } from "@/components/game/PassTurnScreen";
-import { PersistentActionCards } from "@/components/game/PersistentActionCards";
+import { PlayerDetailsModal } from "@/components/game/PlayerDetailsModal";
 import { PlayerPanel } from "@/components/game/PlayerPanel";
 import { PrivateChoicePanel } from "@/components/game/PrivateChoicePanel";
-import { TurnControls } from "@/components/game/TurnControls";
 import { LocalGameSetup } from "@/components/setup/LocalGameSetup";
 import { Button } from "@/components/ui/Button";
+import { CardPreviewModal } from "@/components/ui/CardPreviewModal";
 import { createInitialGameState } from "@/lib/game/createGame";
 import {
   actionEffectRequiresTarget,
@@ -23,17 +23,15 @@ import {
 } from "@/lib/game/effects";
 import { gameReducer } from "@/lib/game/gameReducer";
 import { selectCurrentPlayer } from "@/lib/game/selectors";
-import type { ActionCard, ActionTarget, CardInstance, CardInstanceId } from "@/lib/game/types";
+import type { ActionCard, ActionTarget, BaseCard, CardInstance, CardInstanceId } from "@/lib/game/types";
 
 export function GameBoard() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
   const [selectedActionCardId, setSelectedActionCardId] = useState<CardInstanceId | undefined>();
-  const [selectedPersistentPlayerId, setSelectedPersistentPlayerId] = useState<string | undefined>();
+  const [selectedDetailsPlayerId, setSelectedDetailsPlayerId] = useState<string | undefined>();
+  const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
   const currentPlayer = selectCurrentPlayer(state);
-  const persistentPlayerId =
-    state.players.some((player) => player.id === selectedPersistentPlayerId)
-      ? selectedPersistentPlayerId
-      : currentPlayer?.id;
+  const detailsPlayer = state.players.find((player) => player.id === selectedDetailsPlayerId);
   const canPlayActions =
     state.phase === "playing" &&
     state.turnStep === "playActionOptional" &&
@@ -76,15 +74,6 @@ export function GameBoard() {
 
   function takeNoble(playerId: string) {
     dispatch({ type: "TAKE_FRONT_NOBLE", playerId });
-    setSelectedActionCardId(undefined);
-  }
-
-  function reloadTestHand() {
-    if (!currentPlayer) {
-      return;
-    }
-
-    dispatch({ type: "RELOAD_TEST_HAND", playerId: currentPlayer.id });
     setSelectedActionCardId(undefined);
   }
 
@@ -131,9 +120,7 @@ export function GameBoard() {
     return (
       <PassTurnScreen
         nextPlayer={nextPlayer}
-        canUndo={state.gameHistory.length > 0}
         onReady={() => dispatch({ type: "READY_FOR_TURN" })}
-        onUndo={undo}
       />
     );
   }
@@ -165,86 +152,75 @@ export function GameBoard() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[220px_260px_1fr]">
-        <DayTracker day={state.day} maxDays={state.maxDays} />
-        <div className="rounded-lg border border-stone-300 bg-white p-3 shadow-sm">
-          <p className="text-sm text-stone-600">Current Turn</p>
-          <h2 className="text-xl font-bold">{currentPlayer?.name ?? "No player"}</h2>
-          <p className="mt-1 text-sm text-stone-600">
-            {state.turnStep === "playActionOptional" ? "May play one action, then take a noble." : "Must take the front noble."}
-          </p>
-          {currentPlayer?.skipActionThisTurn ? (
-            <p className="mt-2 rounded-md bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">
-              Rush Job: You cannot play an action card this turn.
-            </p>
-          ) : null}
-          {hasUnpopularJudgeAtFront(state) ? (
-            <p className="mt-2 rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-900">
-              Unpopular Judge is at the front of the line. Action cards cannot be played.
-            </p>
-          ) : null}
-          {state.turnEffects.endDayAfterTurn ? (
-            <p className="mt-2 rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-900">
-              Scarlet Pimpernel is active: this day will end after this turn.
-            </p>
-          ) : null}
-          {selectedAction ? (
-            <p className="mt-2 rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
-              Selecting a target for {selectedAction.card.name}.
-            </p>
-          ) : null}
+      <div className="grid gap-4 lg:grid-cols-[160px_1fr]">
+        <div className="grid h-full grid-rows-2 gap-2">
+          <DayTracker day={state.day} maxDays={state.maxDays} />
+          <div className="rounded-lg border border-stone-300 bg-white p-2 shadow-sm">
+            <p className="text-xs text-stone-600">Current Turn</p>
+            <h2 className="truncate text-base font-bold">{currentPlayer?.name ?? "No player"}</h2>
+            {currentPlayer?.skipActionThisTurn ? (
+              <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
+                Rush Job: no action card.
+              </p>
+            ) : null}
+            {hasUnpopularJudgeAtFront(state) ? (
+              <p className="mt-2 rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-900">
+                Unpopular Judge blocks actions.
+              </p>
+            ) : null}
+            {state.turnEffects.endDayAfterTurn ? (
+              <p className="mt-2 rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-900">
+                Day ends after this turn.
+              </p>
+            ) : null}
+            {selectedAction ? (
+              <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-900">
+                Targeting {selectedAction.card.name}.
+              </p>
+            ) : null}
+          </div>
         </div>
-        <PlayerPanel players={state.players} currentPlayerId={currentPlayer?.id} />
+        <PlayerPanel players={state.players} currentPlayerId={currentPlayer?.id} onSelectPlayer={setSelectedDetailsPlayerId} />
       </div>
 
-      <NobleLine nobles={state.nobleLine.cards} validTargets={validTargets} />
+      <NobleLine nobles={state.nobleLine.cards} validTargets={validTargets} onPreviewCard={setPreviewCard} />
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr_280px]">
-        <div className="flex flex-col gap-4">
-          <PersistentActionCards
-            players={state.players}
-            selectedPlayerId={persistentPlayerId}
-            onSelectPlayer={setSelectedPersistentPlayerId}
-            selectedActionCardId={selectedActionCardId}
-            validTargets={validTargets}
-            onPlayAction={playAction}
-            currentPlayerId={currentPlayer?.id}
-            canDiscardCallousGuards={
-              state.phase === "playing" &&
-              state.turnStep === "playActionOptional" &&
-              Boolean(currentPlayer) &&
-              !currentPlayer?.skipActionThisTurn
-            }
-            onDiscardCallousGuards={discardCallousGuards}
-          />
-          <GameHistory log={state.log} />
-        </div>
-        <div className="flex flex-col gap-4">
-          <ActionHand
-            canPlayActions={canPlayActions}
-            player={currentPlayer}
-            selectedActionCardId={selectedActionCardId}
-            validTargets={validTargets}
-            canPlayActionCard={canPlayActionCard}
-            getActionBlockedReason={getActionBlockedReason}
-            onSelectAction={setSelectedActionCardId}
-            onClearSelection={() => setSelectedActionCardId(undefined)}
-            onPlayAction={playAction}
-            onReloadTestHand={reloadTestHand}
-          />
-          <CollectedNobles player={currentPlayer} />
-        </div>
-        <div className="flex flex-col gap-4">
-          <TurnControls
-            canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}
-            canUndo={state.gameHistory.length > 0}
-            currentPlayerId={currentPlayer?.id}
-            turnStep={state.turnStep}
-            onTakeNoble={takeNoble}
-            onUndo={undo}
-          />
-        </div>
-      </div>
+      <ActionHand
+        canPlayActions={canPlayActions}
+        player={currentPlayer}
+        selectedActionCardId={selectedActionCardId}
+        validTargets={validTargets}
+        canPlayActionCard={canPlayActionCard}
+        getActionBlockedReason={getActionBlockedReason}
+        onSelectAction={setSelectedActionCardId}
+        onClearSelection={() => setSelectedActionCardId(undefined)}
+        onPlayAction={playAction}
+        onPreviewCard={setPreviewCard}
+        canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}
+        currentPlayerId={currentPlayer?.id}
+        onTakeNoble={takeNoble}
+      />
+
+      <CollectedNobles player={currentPlayer} onPreviewCard={setPreviewCard} />
+
+      <GameHistory log={state.log} />
+      <PlayerDetailsModal
+        canDiscardCallousGuards={
+          state.phase === "playing" &&
+          state.turnStep === "playActionOptional" &&
+          Boolean(currentPlayer) &&
+          !currentPlayer?.skipActionThisTurn
+        }
+        currentPlayerId={currentPlayer?.id}
+        onClose={() => setSelectedDetailsPlayerId(undefined)}
+        onDiscardCallousGuards={discardCallousGuards}
+        onPlayAction={playAction}
+        onPreviewCard={setPreviewCard}
+        player={detailsPlayer}
+        selectedActionCardId={selectedActionCardId}
+        validTargets={validTargets}
+      />
+      <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(undefined)} />
     </section>
   );
 }

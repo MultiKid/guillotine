@@ -16,6 +16,7 @@ export interface BaseCard {
   name: string;
   kind: CardKind;
   description?: string;
+  imagePath?: string;
 }
 
 export type NobleColorCategory = "blue" | "red" | "green" | "purple" | "gray";
