@@ -153,6 +153,10 @@ export const actionEffects: Record<ActionEffectKey, ActionEffectDefinition> = {
   clothingSwap: createClothingSwapEffect(),
   confusionInLine: createConfusionInLineEffect(),
   missingHeads: createMissingHeadsEffect(),
+  callousGuards: createAttachToSelfEffect(),
+  infighting: createInfightingEffect(),
+  clericalError: createClericalErrorEffect(),
+  lackOfSupport: createLackOfSupportEffect(),
   extraCart: createImmediateEffect("Add 3 nobles to the end of the line", addExtraCartNobles),
   politicalInfluence: createImmediateEffect("Draw 3 action cards and end this turn", drawPoliticalInfluenceCards),
   doubleFeature: createImmediateEffect("Take an extra front noble immediately", takeExtraFrontNoble),
@@ -210,10 +214,41 @@ export function applyActionEffect(
   effectKey: ActionEffectKey,
   context: ActionEffectContext,
 ): ActionEffectResult {
+  const restriction = getActionPlayRestriction(state, effectKey);
+
+  if (restriction) {
+    return invalidResult(state, restriction);
+  }
+
   return actionEffects[effectKey].apply(state, context);
 }
 
+export function applyAfterActionCardTriggers(state: GameState): { state: GameState; logMessages: string[] } {
+  const masterSpyIndex = state.nobleLine.cards.findIndex((noble) => noble.card.name === "Master Spy");
+
+  if (masterSpyIndex < 0 || masterSpyIndex === state.nobleLine.cards.length - 1) {
+    return { state, logMessages: [] };
+  }
+
+  const masterSpy = state.nobleLine.cards[masterSpyIndex];
+
+  if (!masterSpy) {
+    return { state, logMessages: [] };
+  }
+
+  const cards = state.nobleLine.cards.filter((_, index) => index !== masterSpyIndex);
+
+  return {
+    state: withNobleLine(state, [...cards, masterSpy]),
+    logMessages: ["Master Spy moved to the end of the line after an action card was played."],
+  };
+}
+
 export function canApplyActionEffect(state: GameState, effectKey: ActionEffectKey, context: ActionEffectContext): boolean {
+  if (getActionPlayRestriction(state, effectKey)) {
+    return false;
+  }
+
   return actionEffects[effectKey].canApply(state, context);
 }
 
@@ -227,6 +262,71 @@ export function getValidActionTargets(
 
 export function actionEffectRequiresTarget(effectKey: ActionEffectKey): boolean {
   return actionEffects[effectKey].requiresTarget;
+}
+
+const lineAlteringActionEffects = new Set<ActionEffectKey>([
+  "bribedGuards",
+  "civicPride",
+  "clothingSwap",
+  "confusionInLine",
+  "escape",
+  "extraCart",
+  "faintingSpell",
+  "fledToEngland",
+  "forwardMarch",
+  "friendOfTheQueen",
+  "ignobleNoble",
+  "lackOfFaith",
+  "lateArrival",
+  "letThemEatCake",
+  "lIdiot",
+  "majesty",
+  "massConfusion",
+  "militaryMight",
+  "millingInLine",
+  "missed",
+  "moveBackNobleForwardOne",
+  "moveFrontNobleBackOne",
+  "opinionatedGuards",
+  "publicDemand",
+  "pushed",
+  "stumble",
+  "swapFirstTwoNobles",
+  "theLongWalk",
+  "trip",
+  "wasThatMyName",
+]);
+
+export function hasActiveCallousGuards(state: GameState): boolean {
+  return state.players.some((player) => player.inFrontActions.some((action) => action.card.effectKey === "callousGuards"));
+}
+
+export function isActionBlockedByCallousGuards(state: GameState, effectKey: ActionEffectKey): boolean {
+  return hasActiveCallousGuards(state) && lineAlteringActionEffects.has(effectKey);
+}
+
+export function getCallousGuardsBlockedMessage(): string {
+  return "Callous Guards prevents action cards that alter the line.";
+}
+
+export function hasUnpopularJudgeAtFront(state: GameState): boolean {
+  return state.nobleLine.cards[0]?.card.name === "Unpopular Judge";
+}
+
+export function getUnpopularJudgeBlockedMessage(): string {
+  return "Unpopular Judge is at the front of the line. Action cards cannot be played.";
+}
+
+export function getActionPlayRestriction(state: GameState, effectKey: ActionEffectKey): string | undefined {
+  if (hasUnpopularJudgeAtFront(state)) {
+    return getUnpopularJudgeBlockedMessage();
+  }
+
+  if (isActionBlockedByCallousGuards(state, effectKey)) {
+    return getCallousGuardsBlockedMessage();
+  }
+
+  return undefined;
 }
 
 function createImmediateEffect(
@@ -376,10 +476,10 @@ function createMissedEffect(): ActionEffectDefinition {
   return {
     label: "Choose a player to return their last collected noble",
     requiresTarget: true,
-    canApply: (state) => state.players.some((player) => player.collectedNobles.length > 0),
-    getValidTargets: (state) =>
+    canApply: (state, context) => state.players.some((player) => player.id !== context.playerId && player.collectedNobles.length > 0),
+    getValidTargets: (state, context) =>
       state.players
-        .filter((player) => player.collectedNobles.length > 0)
+        .filter((player) => player.id !== context.playerId && player.collectedNobles.length > 0)
         .map((player) => ({
           target: {
             type: "player" as const,
@@ -397,17 +497,19 @@ function createRushJobEffect(): ActionEffectDefinition {
   return {
     label: "Choose a player to skip their next action play",
     requiresTarget: true,
-    canApply: (state) => state.players.length > 0,
-    getValidTargets: (state) =>
-      state.players.map((player) => ({
-        target: {
-          type: "player" as const,
+    canApply: (state, context) => state.players.some((player) => player.id !== context.playerId),
+    getValidTargets: (state, context) =>
+      state.players
+        .filter((player) => player.id !== context.playerId)
+        .map((player) => ({
+          target: {
+            type: "player" as const,
+            playerId: player.id,
+          },
+          label: `${player.name} cannot play an action on their next turn`,
           playerId: player.id,
-        },
-        label: `${player.name} cannot play an action on their next turn`,
-        playerId: player.id,
-        playerName: player.name,
-      })),
+          playerName: player.name,
+        })),
     apply: applyRushJob,
   };
 }
@@ -500,17 +602,19 @@ function createConfusionInLineEffect(): ActionEffectDefinition {
   return {
     label: "Choose a player whose next collection shuffles the line first",
     requiresTarget: true,
-    canApply: (state) => state.players.length > 0,
-    getValidTargets: (state) =>
-      state.players.map((player) => ({
-        target: {
-          type: "player" as const,
+    canApply: (state, context) => state.players.some((player) => player.id !== context.playerId),
+    getValidTargets: (state, context) =>
+      state.players
+        .filter((player) => player.id !== context.playerId)
+        .map((player) => ({
+          target: {
+            type: "player" as const,
+            playerId: player.id,
+          },
+          label: `Confuse ${player.name}'s next noble collection`,
           playerId: player.id,
-        },
-        label: `Confuse ${player.name}'s next noble collection`,
-        playerId: player.id,
-        playerName: player.name,
-      })),
+          playerName: player.name,
+        })),
     apply: applyConfusionInLine,
   };
 }
@@ -533,6 +637,80 @@ function createMissingHeadsEffect(): ActionEffectDefinition {
           playerName: player.name,
         })),
     apply: discardRandomCollectedNoble,
+  };
+}
+
+function createInfightingEffect(): ActionEffectDefinition {
+  return {
+    label: "Choose a player to privately discard action cards",
+    requiresTarget: true,
+    canApply: (state, context) => state.players.some((player) => player.id !== context.playerId),
+    getValidTargets: (state, context) =>
+      state.players
+        .filter((player) => player.id !== context.playerId)
+        .map((player) => ({
+          target: {
+            type: "player" as const,
+            playerId: player.id,
+          },
+          label: `${player.name} chooses cards to discard`,
+          playerId: player.id,
+          playerName: player.name,
+        })),
+    apply: startInfightingChoice,
+  };
+}
+
+function createClericalErrorEffect(): ActionEffectDefinition {
+  return {
+    label: "Choose a noble from another player's score pile",
+    requiresTarget: true,
+    canApply: (state, context) =>
+      state.players.some((player) => player.id !== context.playerId && player.collectedNobles.length > 0),
+    getValidTargets: (state, context) =>
+      state.players
+        .filter((player) => player.id !== context.playerId)
+        .flatMap((player) =>
+          player.collectedNobles.map((noble) => ({
+            target: {
+              type: "collected-noble" as const,
+              playerId: player.id,
+              instanceId: noble.instanceId,
+            },
+            label: `Collect ${noble.card.name} from ${player.name}`,
+            nobleName: noble.card.name,
+            playerId: player.id,
+            playerName: player.name,
+            revealedNoble: noble,
+          })),
+        ),
+    apply: startClericalErrorExchange,
+  };
+}
+
+function createLackOfSupportEffect(): ActionEffectDefinition {
+  return {
+    label: "Choose an action card from another player's hand to discard",
+    requiresTarget: true,
+    canApply: (state, context) =>
+      state.players.some((player) => player.id !== context.playerId && player.hand.length > 0),
+    getValidTargets: (state, context) =>
+      state.players
+        .filter((player) => player.id !== context.playerId)
+        .flatMap((player) =>
+          player.hand.map((action) => ({
+            target: {
+              type: "action-hand-card" as const,
+              playerId: player.id,
+              instanceId: action.instanceId,
+            },
+            label: `Discard ${action.card.name} from ${player.name}`,
+            revealedAction: action,
+            playerId: player.id,
+            playerName: player.name,
+          })),
+        ),
+    apply: discardActionFromPlayerHand,
   };
 }
 
@@ -886,7 +1064,7 @@ function takeActionFromDiscard(state: GameState, context: ActionEffectContext): 
 function returnLastCollectedNoble(state: GameState, context: ActionEffectContext): ActionEffectResult {
   const target = context.target;
 
-  if (!target || target.type !== "player") {
+  if (!target || target.type !== "player" || target.playerId === context.playerId) {
     return invalidResult(state, "requires a player target");
   }
 
@@ -927,7 +1105,7 @@ function returnLastCollectedNoble(state: GameState, context: ActionEffectContext
 function applyRushJob(state: GameState, context: ActionEffectContext): ActionEffectResult {
   const target = context.target;
 
-  if (!target || target.type !== "player") {
+  if (!target || target.type !== "player" || target.playerId === context.playerId) {
     return invalidResult(state, "requires a player target");
   }
 
@@ -1072,7 +1250,7 @@ function giveFrontNobleToPlayer(state: GameState, context: ActionEffectContext):
       };
     }),
   };
-  const triggered = applyNobleCollectionTriggers(baseState, target.playerId, frontNoble);
+  const triggered = applyNobleCollectionTriggers(baseState, target.playerId, frontNoble, { clownEndsTurn: frontNoble.card.name === "The Clown" });
 
   return {
     state: triggered.state,
@@ -1126,7 +1304,7 @@ function swapNobleWithTopDeckNoble(state: GameState, context: ActionEffectContex
 function applyConfusionInLine(state: GameState, context: ActionEffectContext): ActionEffectResult {
   const target = context.target;
 
-  if (!target || target.type !== "player") {
+  if (!target || target.type !== "player" || target.playerId === context.playerId) {
     return invalidResult(state, "requires a player target");
   }
 
@@ -1156,7 +1334,7 @@ function applyConfusionInLine(state: GameState, context: ActionEffectContext): A
 function discardRandomCollectedNoble(state: GameState, context: ActionEffectContext): ActionEffectResult {
   const target = context.target;
 
-  if (!target || target.type !== "player") {
+  if (!target || target.type !== "player" || target.playerId === context.playerId) {
     return invalidResult(state, "requires a player target");
   }
 
@@ -1198,6 +1376,172 @@ function discardRandomCollectedNoble(state: GameState, context: ActionEffectCont
     },
     applied: true,
     message: `${targetPlayer.name} lost a random collected noble`,
+  };
+}
+
+function startInfightingChoice(state: GameState, context: ActionEffectContext): ActionEffectResult {
+  const target = context.target;
+
+  if (!target || target.type !== "player") {
+    return invalidResult(state, "requires a player target");
+  }
+
+  const targetPlayer = state.players.find((player) => player.id === target.playerId);
+
+  if (!targetPlayer) {
+    return invalidResult(state, "could not find the target player");
+  }
+
+  return {
+    state: {
+      ...state,
+      pendingChoice: {
+        type: "infighting",
+        originalPlayerId: context.playerId,
+        targetPlayerId: target.playerId,
+      },
+      passScreen: {
+        visible: true,
+      },
+    },
+    applied: true,
+    message: `started Infighting for ${targetPlayer.name}`,
+  };
+}
+
+function startClericalErrorExchange(state: GameState, context: ActionEffectContext): ActionEffectResult {
+  const target = context.target;
+
+  if (!target || target.type !== "collected-noble" || target.playerId === context.playerId) {
+    return invalidResult(state, "requires a noble from another player's score pile");
+  }
+
+  const originalPlayer = state.players.find((player) => player.id === context.playerId);
+  const targetPlayer = state.players.find((player) => player.id === target.playerId);
+  const chosenNoble = targetPlayer?.collectedNobles.find((noble) => noble.instanceId === target.instanceId);
+
+  if (!originalPlayer || !targetPlayer || !chosenNoble) {
+    return invalidResult(state, "could not find the selected noble");
+  }
+
+  const transferredState = transferCollectedNoble(state, target.playerId, context.playerId, target.instanceId);
+  const triggered = applyNobleCollectionTriggers(transferredState, context.playerId, chosenNoble, { triggerClown: false });
+  const originalPlayerAfterTransfer = triggered.state.players.find((player) => player.id === context.playerId);
+  const returnChoices =
+    originalPlayerAfterTransfer?.collectedNobles.filter((noble) => noble.instanceId !== chosenNoble.instanceId) ?? [];
+
+  if (returnChoices.length === 0) {
+    return {
+      state: {
+        ...triggered.state,
+        pendingChoice: undefined,
+        passScreen: {
+          visible: false,
+        },
+        notice: `${targetPlayer.name} has no eligible noble to collect for Clerical Error.`,
+      },
+      applied: true,
+      message: `collected a noble from ${targetPlayer.name} with Clerical Error`,
+      extraLogMessages: triggered.logMessages,
+    };
+  }
+
+  return {
+    state: {
+      ...triggered.state,
+      pendingChoice: {
+        type: "clericalErrorReturn",
+        originalPlayerId: context.playerId,
+        targetPlayerId: target.playerId,
+        excludedNobleInstanceId: chosenNoble.instanceId,
+      },
+      passScreen: {
+        visible: true,
+      },
+    },
+    applied: true,
+    message: `started a Clerical Error exchange with ${targetPlayer.name}`,
+    extraLogMessages: triggered.logMessages,
+  };
+}
+
+function discardActionFromPlayerHand(state: GameState, context: ActionEffectContext): ActionEffectResult {
+  const target = context.target;
+
+  if (!target || target.type !== "action-hand-card" || target.playerId === context.playerId) {
+    return invalidResult(state, "requires an action card from another player's hand");
+  }
+
+  const targetPlayer = state.players.find((player) => player.id === target.playerId);
+  const chosenAction = targetPlayer?.hand.find((action) => action.instanceId === target.instanceId);
+
+  if (!targetPlayer || !chosenAction) {
+    return invalidResult(state, "could not find the selected action card");
+  }
+
+  const currentPlayerName = getPlayerName(state, context.playerId);
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((player) =>
+        player.id === target.playerId
+          ? {
+              ...player,
+              hand: player.hand.filter((action) => action.instanceId !== target.instanceId),
+            }
+          : player,
+      ),
+      actionDeck: {
+        ...state.actionDeck,
+        discardPile: [chosenAction, ...state.actionDeck.discardPile],
+      },
+    },
+    applied: true,
+    logMessage: `${currentPlayerName} used Lack of Support on ${targetPlayer.name}.`,
+    message: `used Lack of Support on ${targetPlayer.name}`,
+  };
+}
+
+function transferCollectedNoble(state: GameState, fromPlayerId: PlayerId, toPlayerId: PlayerId, nobleId: string): GameState {
+  const fromPlayer = state.players.find((player) => player.id === fromPlayerId);
+  const movedNoble = fromPlayer?.collectedNobles.find((noble) => noble.instanceId === nobleId);
+
+  if (!fromPlayer || !movedNoble) {
+    return state;
+  }
+
+  const players = state.players.map((player) => {
+    if (player.id === fromPlayerId) {
+      const updatedPlayer: Player = {
+        ...player,
+        collectedNobles: player.collectedNobles.filter((noble) => noble.instanceId !== nobleId),
+      };
+
+      return {
+        ...updatedPlayer,
+        score: calculatePlayerScore(updatedPlayer),
+      };
+    }
+
+    if (player.id === toPlayerId) {
+      const updatedPlayer: Player = {
+        ...player,
+        collectedNobles: [...player.collectedNobles, movedNoble],
+      };
+
+      return {
+        ...updatedPlayer,
+        score: calculatePlayerScore(updatedPlayer),
+      };
+    }
+
+    return player;
+  });
+
+  return {
+    ...state,
+    players,
   };
 }
 
@@ -1552,27 +1896,114 @@ export function applyNobleCollectionTriggers(
   state: GameState,
   playerId: PlayerId,
   noble: CardInstance<NobleCard>,
+  options: { triggerClown?: boolean; clownEndsTurn?: boolean } = {},
 ): { state: GameState; logMessages: string[] } {
-  if (noble.card.colorCategory !== "purple") {
-    return { state, logMessages: [] };
+  let nextState = state;
+  const logMessages: string[] = [];
+  const playerName = getPlayerName(nextState, playerId);
+  const shouldTriggerClown = options.triggerClown ?? true;
+
+  if (noble.card.name === "Robespierre") {
+    nextState = {
+      ...nextState,
+      turnEffects: {
+        ...nextState.turnEffects,
+        endDayAfterTurn: true,
+      },
+    };
+    logMessages.push("Robespierre triggered: this day will end after the turn finishes.");
   }
 
-  const player = state.players.find((candidate) => candidate.id === playerId);
+  if (noble.card.name === "The Clown" && shouldTriggerClown) {
+    const currentPlayerIsReceiver = nextState.players[nextState.currentPlayerIndex]?.id === playerId;
+    nextState = {
+      ...nextState,
+      pendingChoice: {
+        type: "clownGift",
+        originalPlayerId: playerId,
+        targetPlayerId: playerId,
+        clownInstanceId: noble.instanceId,
+        returnToPassScreen: !currentPlayerIsReceiver || Boolean(options.clownEndsTurn),
+        advanceTurnAfterChoice: Boolean(options.clownEndsTurn),
+      },
+      passScreen: {
+        visible: false,
+      },
+    };
+    logMessages.push(`The Clown triggered: ${playerName} must give The Clown to another player.`);
+  }
+
+  if (noble.card.name === "Fast Noble") {
+    const collected = collectFrontNobleForTrigger(nextState, playerId);
+    nextState = collected.state;
+    logMessages.push(...collected.logMessages);
+  }
+
+  if (noble.card.name === "General" || noble.card.name === "Captain of the Guard") {
+    const added = addTopNobleToLine(nextState);
+    nextState = added.state;
+    if (added.addedName) {
+      logMessages.push(`${noble.card.name} triggered: ${added.addedName} was added to the end of the line.`);
+    }
+  }
+
+  if (noble.card.name === "Innocent Victim") {
+    const player = nextState.players.find((candidate) => candidate.id === playerId);
+    if (player && player.hand.length > 0) {
+      nextState = {
+        ...nextState,
+        pendingChoice: {
+          type: "innocentVictimDiscard",
+          originalPlayerId: playerId,
+          targetPlayerId: playerId,
+          returnToPassScreen: nextState.players[nextState.currentPlayerIndex]?.id !== playerId,
+        },
+        passScreen: {
+          visible: false,
+        },
+      };
+      logMessages.push(`Innocent Victim triggered: ${playerName} must discard 1 action card.`);
+    }
+  }
+
+  if (noble.card.name === "Lady" || noble.card.name === "Lord") {
+    const drawn = drawActionCardsForTrigger(nextState, playerId, 1);
+    nextState = drawn.state;
+    logMessages.push(...drawn.logMessages.map((message) => `${noble.card.name} triggered: ${message}`));
+  }
+
+  if (noble.card.name === "Lady in Waiting") {
+    const drawn = drawActionCardsForTrigger(nextState, playerId, 1);
+    nextState = drawn.state;
+    logMessages.push(...drawn.logMessages.map((message) => `Lady in Waiting triggered: ${message}`));
+  }
+
+  if (noble.card.name === "Rival Executioner") {
+    const collected = collectTopDeckNobleForTrigger(nextState, playerId);
+    nextState = collected.state;
+    logMessages.push(...collected.logMessages);
+  }
+
+  if (noble.card.colorCategory !== "purple") {
+    return { state: nextState, logMessages };
+  }
+
+  const player = nextState.players.find((candidate) => candidate.id === playerId);
 
   if (!player || !player.inFrontActions.some((action) => action.card.effectKey === "foreignSupport")) {
-    return { state, logMessages: [] };
+    return { state: nextState, logMessages };
   }
 
-  const [drawnAction, ...remainingActionDeck] = state.actionDeck.drawPile;
+  const [drawnAction, ...remainingActionDeck] = nextState.actionDeck.drawPile;
 
   if (!drawnAction) {
-    return { state, logMessages: [] };
+    return { state: nextState, logMessages };
   }
 
   return {
     state: {
-      ...state,
-      players: state.players.map((candidate) =>
+      ...nextState,
+      players: nextState.players.map((candidate) =>
         candidate.id === playerId
           ? {
               ...candidate,
@@ -1581,11 +2012,138 @@ export function applyNobleCollectionTriggers(
           : candidate,
       ),
       actionDeck: {
-        ...state.actionDeck,
+        ...nextState.actionDeck,
         drawPile: remainingActionDeck,
       },
     },
-    logMessages: [`Foreign Support triggered: ${player.name} drew 1 action card for collecting a Purple noble.`],
+    logMessages: [...logMessages, `Foreign Support triggered: ${player.name} drew 1 action card for collecting a Purple noble.`],
+  };
+}
+
+function collectFrontNobleForTrigger(state: GameState, playerId: PlayerId): { state: GameState; logMessages: string[] } {
+  const frontNoble = state.nobleLine.cards[0];
+
+  if (!frontNoble) {
+    return { state, logMessages: [] };
+  }
+
+  const collectedState = addCollectedNobleToPlayer(
+    {
+      ...state,
+      nobleLine: {
+        cards: state.nobleLine.cards.slice(1),
+      },
+    },
+    playerId,
+    frontNoble,
+  );
+  const triggered = applyNobleCollectionTriggers(collectedState, playerId, frontNoble);
+
+  return {
+    state: triggered.state,
+    logMessages: [
+      `Fast Noble triggered: ${getPlayerName(state, playerId)} collected ${frontNoble.card.name} from the front of the line.`,
+      ...triggered.logMessages,
+    ],
+  };
+}
+
+function collectTopDeckNobleForTrigger(state: GameState, playerId: PlayerId): { state: GameState; logMessages: string[] } {
+  const [topNoble, ...remainingNobleDeck] = state.nobleDeck.drawPile;
+
+  if (!topNoble) {
+    return { state, logMessages: [] };
+  }
+
+  const collectedState = addCollectedNobleToPlayer(
+    {
+      ...state,
+      nobleDeck: {
+        ...state.nobleDeck,
+        drawPile: remainingNobleDeck,
+      },
+    },
+    playerId,
+    topNoble,
+  );
+  const triggered = applyNobleCollectionTriggers(collectedState, playerId, topNoble);
+
+  return {
+    state: triggered.state,
+    logMessages: [
+      `Rival Executioner triggered: ${getPlayerName(state, playerId)} collected ${topNoble.card.name} from the noble deck.`,
+      ...triggered.logMessages,
+    ],
+  };
+}
+
+function addTopNobleToLine(state: GameState): { state: GameState; addedName?: string } {
+  const [topNoble, ...remainingNobleDeck] = state.nobleDeck.drawPile;
+
+  if (!topNoble) {
+    return { state };
+  }
+
+  return {
+    state: {
+      ...state,
+      nobleDeck: {
+        ...state.nobleDeck,
+        drawPile: remainingNobleDeck,
+      },
+      nobleLine: {
+        cards: [...state.nobleLine.cards, topNoble],
+      },
+    },
+    addedName: topNoble.card.name,
+  };
+}
+
+function drawActionCardsForTrigger(state: GameState, playerId: PlayerId, count: number): { state: GameState; logMessages: string[] } {
+  const cardsToDraw = state.actionDeck.drawPile.slice(0, count);
+
+  if (cardsToDraw.length === 0) {
+    return { state, logMessages: [] };
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((player) =>
+        player.id === playerId
+          ? {
+              ...player,
+              hand: [...player.hand, ...cardsToDraw],
+            }
+          : player,
+      ),
+      actionDeck: {
+        ...state.actionDeck,
+        drawPile: state.actionDeck.drawPile.slice(cardsToDraw.length),
+      },
+    },
+    logMessages: [`${getPlayerName(state, playerId)} drew ${cardsToDraw.length} action card${cardsToDraw.length === 1 ? "" : "s"}.`],
+  };
+}
+
+function addCollectedNobleToPlayer(state: GameState, playerId: PlayerId, noble: CardInstance<NobleCard>): GameState {
+  return {
+    ...state,
+    players: state.players.map((player) => {
+      if (player.id !== playerId) {
+        return player;
+      }
+
+      const updatedPlayer: Player = {
+        ...player,
+        collectedNobles: [...player.collectedNobles, noble],
+      };
+
+      return {
+        ...updatedPlayer,
+        score: calculatePlayerScore(updatedPlayer),
+      };
+    }),
   };
 }
 

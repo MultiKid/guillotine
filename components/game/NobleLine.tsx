@@ -1,5 +1,6 @@
 ﻿import { Card } from "@/components/ui/Card";
 import { getNobleColorStyle, selectedNobleColorStyle } from "@/lib/cards/nobleColors";
+import { getNoblePointText } from "@/lib/game/scoring";
 import type { CardInstance, NobleCard } from "@/lib/game/types";
 import type { ValidActionTarget } from "@/lib/game/effects";
 
@@ -26,7 +27,7 @@ export function NobleLine({ nobles, validTargets = [] }: NobleLineProps) {
             <div className={`min-h-28 rounded-md border p-2 transition-colors ${colorStyle}`} key={noble.instanceId}>
               <div className="text-[10px] font-semibold uppercase text-stone-500">Pos {index + 1}</div>
               <h3 className="mt-1 break-words text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h3>
-              <p className="mt-1 text-xs text-stone-700">{noble.card.points} pts</p>
+              <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
               {isValidTarget ? <p className="mt-2 text-xs font-semibold text-amber-800">Valid target</p> : null}
             </div>
           );

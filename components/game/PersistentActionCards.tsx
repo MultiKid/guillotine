@@ -11,6 +11,9 @@ type PersistentActionCardsProps = {
   validTargets?: ValidActionTarget[];
   onSelectPlayer: (playerId: PlayerId) => void;
   onPlayAction?: (cardId: CardInstanceId, target?: ActionTarget) => void;
+  currentPlayerId?: PlayerId;
+  canDiscardCallousGuards?: boolean;
+  onDiscardCallousGuards?: (cardId: CardInstanceId) => void;
 };
 
 export function PersistentActionCards({
@@ -20,6 +23,9 @@ export function PersistentActionCards({
   validTargets = [],
   onSelectPlayer,
   onPlayAction,
+  currentPlayerId,
+  canDiscardCallousGuards = false,
+  onDiscardCallousGuards,
 }: PersistentActionCardsProps) {
   const [pendingTarget, setPendingTarget] = useState<ValidActionTarget | undefined>();
   const selectedPlayer = players.find((player) => player.id === selectedPlayerId) ?? players[0];
@@ -86,6 +92,11 @@ export function PersistentActionCards({
               >
                 <h3 className="text-sm font-semibold leading-snug">{action.card.name}</h3>
                 <p className="mt-1 text-xs text-stone-700">{action.card.description ?? "Persistent action modifier."}</p>
+                {action.card.effectKey === "callousGuards" && selectedPlayer?.id === currentPlayerId && canDiscardCallousGuards ? (
+                  <Button className="mt-2 w-full" onClick={() => onDiscardCallousGuards?.(action.instanceId)}>
+                    Discard Callous Guards
+                  </Button>
+                ) : null}
                 {twistTarget ? (
                   <Button className="mt-2 w-full" onClick={() => setPendingTarget(twistTarget)}>
                     Select

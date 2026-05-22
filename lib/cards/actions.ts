@@ -199,6 +199,22 @@ const implementedActions: Record<string, { effectKey: ActionEffectKey; descripti
     effectKey: "missingHeads",
     description: "Choose a player. That player loses a random noble from his or her score pile.",
   },
+  "Callous Guards": {
+    effectKey: "callousGuards",
+    description: "Put this card in front of you. Action cards that alter the line may not be played.",
+  },
+  Infighting: {
+    effectKey: "infighting",
+    description: "Choose a player. That player must choose 2 action cards from his or her hand and discard them.",
+  },
+  "Clerical Error": {
+    effectKey: "clericalError",
+    description: "Choose a player. Collect any noble of your choice from that player's score pile, then that player takes one from yours.",
+  },
+  "Lack of Support": {
+    effectKey: "lackOfSupport",
+    description: "Choose a player. Look at that player's hand, choose an action card, and discard it.",
+  },
 };
 
 const actionNames = [

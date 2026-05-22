@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { getNobleColorStyle } from "@/lib/cards/nobleColors";
 import { actionEffectRequiresTarget } from "@/lib/game/effects";
+import { getNoblePointText } from "@/lib/game/scoring";
 import type { ValidActionTarget } from "@/lib/game/effects";
 import type { ActionCard, ActionTarget, CardInstance, CardInstanceId, Player } from "@/lib/game/types";
 
@@ -12,6 +13,7 @@ type ActionHandProps = {
   selectedActionCardId?: CardInstanceId;
   validTargets: ValidActionTarget[];
   canPlayActionCard: (card: CardInstance<ActionCard>) => boolean;
+  getActionBlockedReason: (card: CardInstance<ActionCard>) => string | undefined;
   onSelectAction: (cardId: CardInstanceId) => void;
   onClearSelection: () => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
@@ -24,6 +26,7 @@ export function ActionHand({
   selectedActionCardId,
   validTargets,
   canPlayActionCard,
+  getActionBlockedReason,
   onSelectAction,
   onClearSelection,
   onPlayAction,
@@ -31,9 +34,12 @@ export function ActionHand({
 }: ActionHandProps) {
   const selectedAction = player?.hand.find((action) => action.instanceId === selectedActionCardId);
   const [reorderIds, setReorderIds] = useState<CardInstanceId[]>([]);
+  const [selectedPrivateTargetPlayerId, setSelectedPrivateTargetPlayerId] = useState<string | undefined>();
   const isOpinionatedGuards = selectedAction?.card.effectKey === "opinionatedGuards";
   const isLateArrival = selectedAction?.card.effectKey === "lateArrival";
   const isTwistOfFate = selectedAction?.card.effectKey === "twistOfFate";
+  const isPrivateHandSelection = selectedAction?.card.effectKey === "lackOfSupport";
+  const isCollectedNobleSelection = selectedAction?.card.effectKey === "clericalError";
 
   useEffect(() => {
     if (!isOpinionatedGuards) {
@@ -43,6 +49,12 @@ export function ActionHand({
 
     setReorderIds(validTargets.flatMap((target) => (target.target.type === "noble" ? [target.target.instanceId] : [])));
   }, [isOpinionatedGuards, selectedActionCardId, validTargets]);
+
+  useEffect(() => {
+    if (!isPrivateHandSelection) {
+      setSelectedPrivateTargetPlayerId(undefined);
+    }
+  }, [isPrivateHandSelection, selectedActionCardId]);
 
   function moveReorderItem(instanceId: CardInstanceId, direction: -1 | 1) {
     setReorderIds((currentIds) => {
@@ -120,7 +132,7 @@ export function ActionHand({
                 return (
                   <div className={`rounded-md border p-2 ${getNobleColorStyle(noble.card.colorCategory)}`} key={noble.instanceId}>
                     <h4 className="text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
-                    <p className="mt-1 text-xs text-stone-700">{noble.card.points} pts</p>
+                    <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
                     <Button className="mt-3 w-full" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
                       Select
                     </Button>
@@ -130,6 +142,34 @@ export function ActionHand({
             </div>
           ) : isTwistOfFate ? (
             <p className="mt-3 text-sm text-stone-700">Select a card in the Cards In Front panel, then confirm the discard.</p>
+          ) : isPrivateHandSelection ? (
+            <PrivateHandTargetPicker
+              selectedPlayerId={selectedPrivateTargetPlayerId}
+              validTargets={validTargets}
+              onSelectPlayer={setSelectedPrivateTargetPlayerId}
+              onPlay={(target) => onPlayAction(selectedAction.instanceId, target)}
+            />
+          ) : isCollectedNobleSelection ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {validTargets.map((target) => {
+                const noble = target.target.type === "collected-noble" ? target.revealedNoble : undefined;
+
+                if (!noble) {
+                  return null;
+                }
+
+                return (
+                  <div className={`rounded-md border p-2 ${getNobleColorStyle(noble.card.colorCategory)}`} key={`${target.playerId}-${noble.instanceId}`}>
+                    <p className="text-xs font-semibold text-stone-600">{target.playerName}</p>
+                    <h4 className="mt-1 text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
+                    <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
+                    <Button className="mt-3 w-full" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
+                      Select
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="mt-3 flex flex-wrap gap-2">
               {validTargets.map((target) => (
@@ -148,6 +188,7 @@ export function ActionHand({
           const requiresTarget = actionEffectRequiresTarget(action.card.effectKey);
           const isSelected = action.instanceId === selectedActionCardId;
           const isPlayable = canPlayActions && canPlayActionCard(action);
+          const blockedReason = getActionBlockedReason(action);
 
           return (
             <div
@@ -156,12 +197,13 @@ export function ActionHand({
             >
               <h3 className="font-semibold leading-snug">{action.card.name}</h3>
               <p className="mt-1 text-sm text-stone-600">{action.card.description}</p>
+              {blockedReason ? <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-800">{blockedReason}</p> : null}
               <Button
                 className="mt-3 w-full"
                 disabled={!isPlayable}
                 onClick={() => (requiresTarget ? onSelectAction(action.instanceId) : onPlayAction(action.instanceId))}
               >
-                {isPlayable ? (requiresTarget ? "Choose Target" : "Play Card") : "No Legal Play"}
+                {blockedReason ? "Blocked" : isPlayable ? (requiresTarget ? "Choose Target" : "Play Card") : "No Legal Play"}
               </Button>
             </div>
           );
@@ -170,4 +212,81 @@ export function ActionHand({
       </div>
     </Card>
   );
+}
+
+type PrivateHandTargetPickerProps = {
+  selectedPlayerId?: string;
+  validTargets: ValidActionTarget[];
+  onSelectPlayer: (playerId: string) => void;
+  onPlay: (target: ActionTarget) => void;
+};
+
+function PrivateHandTargetPicker({
+  selectedPlayerId,
+  validTargets,
+  onSelectPlayer,
+  onPlay,
+}: PrivateHandTargetPickerProps) {
+  const playerTargets = getPrivateHandPlayerTargets(validTargets);
+  const selectedPlayerTargets = selectedPlayerId
+    ? validTargets.filter((target) => target.target.type === "action-hand-card" && target.playerId === selectedPlayerId)
+    : [];
+
+  if (playerTargets.length === 0) {
+    return <p className="mt-3 text-sm text-stone-600">No opponents have action cards to discard.</p>;
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      {selectedPlayerId ? (
+        <p className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-stone-800">
+          Inspecting {playerTargets.find((target) => target.playerId === selectedPlayerId)?.playerName ?? "selected player"}'s hand.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {playerTargets.map((target) => (
+            <Button key={target.playerId} onClick={() => onSelectPlayer(target.playerId)}>
+              {target.playerName}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {selectedPlayerId ? (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {selectedPlayerTargets.map((target) => {
+            const action = target.target.type === "action-hand-card" ? target.revealedAction : undefined;
+
+            if (!action) {
+              return null;
+            }
+
+            return (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3" key={`${target.playerId}-${action.instanceId}`}>
+                <h4 className="font-semibold leading-tight">{action.card.name}</h4>
+                <p className="mt-1 text-xs text-stone-700">{action.card.description}</p>
+                <Button className="mt-3 w-full" onClick={() => onPlay(target.target)}>
+                  Discard
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-stone-600">Choose an opponent to inspect their hand.</p>
+      )}
+    </div>
+  );
+}
+
+function getPrivateHandPlayerTargets(validTargets: ValidActionTarget[]) {
+  const players = new Map<string, string>();
+
+  validTargets.forEach((target) => {
+    if (target.target.type === "action-hand-card" && target.playerId && target.playerName) {
+      players.set(target.playerId, target.playerName);
+    }
+  });
+
+  return Array.from(players, ([playerId, playerName]) => ({ playerId, playerName }));
 }

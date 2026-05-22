@@ -1,5 +1,6 @@
 import { Card } from "@/components/ui/Card";
 import { getNobleColorStyle } from "@/lib/cards/nobleColors";
+import { getNoblePointText } from "@/lib/game/scoring";
 import type { Player } from "@/lib/game/types";
 
 type CollectedNoblesProps = {
@@ -23,7 +24,7 @@ export function CollectedNobles({ player }: CollectedNoblesProps) {
                 key={noble.instanceId}
               >
                 <span className="font-semibold">{noble.card.name}</span>
-                <span className="ml-1 text-stone-700">{noble.card.points} pts</span>
+                <span className="ml-1 text-stone-700">{getNoblePointText(noble, player)} pts</span>
               </div>
             ))}
           </div>

@@ -80,6 +80,10 @@ export type ActionEffectKey =
   | "clothingSwap"
   | "confusionInLine"
   | "missingHeads"
+  | "callousGuards"
+  | "infighting"
+  | "clericalError"
+  | "lackOfSupport"
   | "moveFrontNobleBackOne"
   | "moveBackNobleForwardOne"
   | "swapFirstTwoNobles"
@@ -127,6 +131,33 @@ export interface TurnEffectsState {
   endDayAfterTurn: boolean;
 }
 
+export type PendingPrivateChoice =
+  | {
+      type: "infighting";
+      originalPlayerId: PlayerId;
+      targetPlayerId: PlayerId;
+    }
+  | {
+      type: "clericalErrorReturn";
+      originalPlayerId: PlayerId;
+      targetPlayerId: PlayerId;
+      excludedNobleInstanceId: CardInstanceId;
+    }
+  | {
+      type: "innocentVictimDiscard";
+      originalPlayerId: PlayerId;
+      targetPlayerId: PlayerId;
+      returnToPassScreen: boolean;
+    }
+  | {
+      type: "clownGift";
+      originalPlayerId: PlayerId;
+      targetPlayerId: PlayerId;
+      clownInstanceId: CardInstanceId;
+      returnToPassScreen: boolean;
+      advanceTurnAfterChoice: boolean;
+    };
+
 export interface GameSnapshot {
   state: Omit<GameState, "gameHistory">;
   reason: string;
@@ -142,6 +173,9 @@ export interface GameState {
   turnStep: TurnStep;
   passScreen: PassScreenState;
   turnEffects: TurnEffectsState;
+  pendingChoice?: PendingPrivateChoice;
+  returningFromPrivateChoice: boolean;
+  notice?: string;
   nobleDeck: DeckState<NobleCard>;
   actionDeck: DeckState<ActionCard>;
   nobleLine: NobleLine;
@@ -156,6 +190,8 @@ export type ActionTarget =
   | { type: "reorder-nobles"; instanceIds: CardInstanceId[] }
   | { type: "noble-deck-card"; instanceId: CardInstanceId }
   | { type: "action-discard-card"; instanceId: CardInstanceId }
+  | { type: "action-hand-card"; playerId: PlayerId; instanceId: CardInstanceId }
+  | { type: "collected-noble"; playerId: PlayerId; instanceId: CardInstanceId }
   | { type: "in-front-action"; playerId: PlayerId; instanceId: CardInstanceId }
   | { type: "noble-position"; index: number }
   | { type: "player"; playerId: PlayerId };
@@ -163,7 +199,13 @@ export type ActionTarget =
 export type GameCommand =
   | { type: "START_GAME"; playerNames: string[] }
   | { type: "READY_FOR_TURN" }
+  | { type: "DISMISS_NOTICE" }
   | { type: "RELOAD_TEST_HAND"; playerId: PlayerId }
+  | { type: "DISCARD_CALLOUS_GUARDS"; playerId: PlayerId; cardId: CardInstanceId }
+  | { type: "RESOLVE_INFIGHTING"; playerId: PlayerId; cardIds: CardInstanceId[] }
+  | { type: "RESOLVE_CLERICAL_ERROR_RETURN"; playerId: PlayerId; nobleId?: CardInstanceId }
+  | { type: "RESOLVE_INNOCENT_VICTIM_DISCARD"; playerId: PlayerId; cardId?: CardInstanceId }
+  | { type: "RESOLVE_CLOWN_GIFT"; playerId: PlayerId; targetPlayerId: PlayerId }
   | {
       type: "PLAY_ACTION_CARD";
       playerId: PlayerId;

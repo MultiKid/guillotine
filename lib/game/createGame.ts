@@ -26,6 +26,9 @@ export function createInitialGameState(): GameState {
     turnEffects: {
       endDayAfterTurn: false,
     },
+    pendingChoice: undefined,
+    returningFromPrivateChoice: false,
+    notice: undefined,
     nobleDeck: {
       drawPile: [],
       discardPile: [],
