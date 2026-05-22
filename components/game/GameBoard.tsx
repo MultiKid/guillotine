@@ -28,6 +28,7 @@ import type { ActionCard, ActionTarget, BaseCard, CardInstance, CardInstanceId }
 export function GameBoard() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
   const [selectedActionCardId, setSelectedActionCardId] = useState<CardInstanceId | undefined>();
+  const [selectedNobleTargetId, setSelectedNobleTargetId] = useState<CardInstanceId | undefined>();
   const [selectedDetailsPlayerId, setSelectedDetailsPlayerId] = useState<string | undefined>();
   const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
   const currentPlayer = selectCurrentPlayer(state);
@@ -50,6 +51,7 @@ export function GameBoard() {
 
     dispatch({ type: "PLAY_ACTION_CARD", playerId: currentPlayer.id, cardId, target });
     setSelectedActionCardId(undefined);
+    setSelectedNobleTargetId(undefined);
   }
 
   function canPlayActionCard(action: CardInstance<ActionCard>) {
@@ -75,6 +77,7 @@ export function GameBoard() {
   function takeNoble(playerId: string) {
     dispatch({ type: "TAKE_FRONT_NOBLE", playerId });
     setSelectedActionCardId(undefined);
+    setSelectedNobleTargetId(undefined);
   }
 
   function discardCallousGuards(cardId: CardInstanceId) {
@@ -84,11 +87,13 @@ export function GameBoard() {
 
     dispatch({ type: "DISCARD_CALLOUS_GUARDS", playerId: currentPlayer.id, cardId });
     setSelectedActionCardId(undefined);
+    setSelectedNobleTargetId(undefined);
   }
 
   function undo() {
     dispatch({ type: "UNDO_LAST_ACTION" });
     setSelectedActionCardId(undefined);
+    setSelectedNobleTargetId(undefined);
   }
 
   function resolveInfighting(playerId: string, cardIds: CardInstanceId[]) {
@@ -180,10 +185,23 @@ export function GameBoard() {
             ) : null}
           </div>
         </div>
-        <PlayerPanel players={state.players} currentPlayerId={currentPlayer?.id} onSelectPlayer={setSelectedDetailsPlayerId} />
+        <PlayerPanel
+          players={state.players}
+          currentPlayerId={currentPlayer?.id}
+          playerTargets={validTargets.filter((target) => target.target.type === "player")}
+          onSelectPlayer={setSelectedDetailsPlayerId}
+          onSelectPlayerTarget={(target) => selectedAction && playAction(selectedAction.instanceId, target)}
+        />
       </div>
 
-      <NobleLine nobles={state.nobleLine.cards} validTargets={validTargets} onPreviewCard={setPreviewCard} />
+      <NobleLine
+        nobles={state.nobleLine.cards}
+        selectedNobleTargetId={selectedNobleTargetId}
+        validTargets={validTargets}
+        onPlayTarget={(target) => selectedAction && playAction(selectedAction.instanceId, target)}
+        onPreviewCard={setPreviewCard}
+        onSelectNobleTarget={setSelectedNobleTargetId}
+      />
 
       <ActionHand
         canPlayActions={canPlayActions}
@@ -192,8 +210,14 @@ export function GameBoard() {
         validTargets={validTargets}
         canPlayActionCard={canPlayActionCard}
         getActionBlockedReason={getActionBlockedReason}
-        onSelectAction={setSelectedActionCardId}
-        onClearSelection={() => setSelectedActionCardId(undefined)}
+        onSelectAction={(cardId) => {
+          setSelectedActionCardId(cardId);
+          setSelectedNobleTargetId(undefined);
+        }}
+        onClearSelection={() => {
+          setSelectedActionCardId(undefined);
+          setSelectedNobleTargetId(undefined);
+        }}
         onPlayAction={playAction}
         onPreviewCard={setPreviewCard}
         canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}
@@ -201,9 +225,10 @@ export function GameBoard() {
         onTakeNoble={takeNoble}
       />
 
-      <CollectedNobles player={currentPlayer} onPreviewCard={setPreviewCard} />
-
-      <GameHistory log={state.log} />
+      <div className="grid gap-4 lg:grid-cols-[5fr_3fr]">
+        <CollectedNobles player={currentPlayer} onPreviewCard={setPreviewCard} />
+        <GameHistory log={state.log} />
+      </div>
       <PlayerDetailsModal
         canDiscardCallousGuards={
           state.phase === "playing" &&

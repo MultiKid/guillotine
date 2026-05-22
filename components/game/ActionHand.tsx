@@ -47,6 +47,8 @@ export function ActionHand({
   const isTwistOfFate = selectedAction?.card.effectKey === "twistOfFate";
   const isPrivateHandSelection = selectedAction?.card.effectKey === "lackOfSupport";
   const isCollectedNobleSelection = selectedAction?.card.effectKey === "clericalError";
+  const isLineMovementSelection = validTargets.some(isLineMovementTarget);
+  const isPlayerSelection = validTargets.some((target) => target.target.type === "player");
 
   useEffect(() => {
     if (!isOpinionatedGuards) {
@@ -163,6 +165,12 @@ export function ActionHand({
             </div>
           ) : isTwistOfFate ? (
             <p className="mt-3 text-sm text-stone-700">Select a card in the Cards In Front panel, then confirm the discard.</p>
+          ) : isLineMovementSelection ? (
+            <p className="mt-3 text-sm text-stone-700">
+              Choose a highlighted noble in the noble line, then choose one of the highlighted landing spots.
+            </p>
+          ) : isPlayerSelection ? (
+            <p className="mt-3 text-sm text-stone-700">Choose a highlighted player in the Players panel.</p>
           ) : isPrivateHandSelection ? (
             <PrivateHandTargetPicker
               selectedPlayerId={selectedPrivateTargetPlayerId}
@@ -219,7 +227,7 @@ export function ActionHand({
         </div>
       ) : null}
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
+      <div className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {player?.hand.map((action) => {
           const requiresTarget = actionEffectRequiresTarget(action.card.effectKey);
           const isSelected = action.instanceId === selectedActionCardId;
@@ -234,7 +242,7 @@ export function ActionHand({
               <CardImage
                 alt={action.card.name}
                 className="cursor-pointer"
-                imageClassName="mx-auto max-h-40 aspect-[5/7] border border-amber-200 shadow-sm"
+                imageClassName="mx-auto max-h-60 aspect-[5/7] border border-amber-200 shadow-sm"
                 imagePath={action.card.imagePath}
                 onClick={() => onPreviewCard?.(action.card)}
               >
@@ -243,7 +251,6 @@ export function ActionHand({
                   <p className="mt-1 text-xs text-stone-600">{action.card.description}</p>
                 </div>
               </CardImage>
-              <h3 className="mt-2 text-sm font-semibold leading-snug">{action.card.name}</h3>
               {blockedReason ? <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-800">{blockedReason}</p> : null}
               <Button
                 className="mt-2 w-full px-2 py-1.5 text-xs"
@@ -349,4 +356,12 @@ function getPrivateHandPlayerTargets(validTargets: ValidActionTarget[]) {
   });
 
   return Array.from(players, ([playerId, playerName]) => ({ playerId, playerName }));
+}
+
+function isLineMovementTarget(target: ValidActionTarget): boolean {
+  return (
+    (target.target.type === "move-noble" || target.target.type === "noble") &&
+    typeof target.fromPosition === "number" &&
+    typeof target.toPosition === "number"
+  );
 }
