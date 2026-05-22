@@ -95,7 +95,7 @@ export function ActionHand({
               <Button onClick={onClearSelection}>Cancel</Button>
             </div>
           ) : isLateArrival ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
               {validTargets.map((target) => {
                 const noble = target.target.type === "noble-deck-card"
                   ? target.revealedNoble
@@ -106,7 +106,7 @@ export function ActionHand({
                 }
 
                 return (
-                  <div className={`rounded-md border p-2 ${getNobleColorStyle(noble.card.colorCategory)}`} key={noble.instanceId}>
+                  <div className={`max-w-28 rounded-md border p-1.5 ${getNobleColorStyle(noble.card.colorCategory)}`} key={noble.instanceId}>
                     <CardImage
                       alt={noble.card.name}
                       className="cursor-pointer"
@@ -114,8 +114,8 @@ export function ActionHand({
                       imagePath={noble.card.imagePath}
                       onClick={() => onPreviewCard?.(noble.card)}
                     >
-                      <div className="min-h-20 rounded-md bg-white/60 p-2">
-                        <h4 className="text-sm font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
+                      <div className="min-h-12 rounded-md bg-white/60 p-1">
+                        <h4 className="text-xs font-semibold leading-tight text-stone-950">{noble.card.name}</h4>
                         <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
                       </div>
                     </CardImage>
@@ -123,7 +123,7 @@ export function ActionHand({
                       <span className="truncate font-semibold">{noble.card.name}</span>
                       <span className="shrink-0">{getNoblePointText(noble)} pts</span>
                     </div>
-                    <Button className="mt-3 w-full" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
+                    <Button className="mt-2 w-full px-2 py-1 text-xs" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
                       Select
                     </Button>
                   </div>

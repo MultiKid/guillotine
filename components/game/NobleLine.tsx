@@ -35,7 +35,6 @@ export function NobleLine({
   const [dragState, setDragState] = useState<{
     currentX: number;
     instanceId: CardInstanceId;
-    originIndex: number;
     slotWidth: number;
     startX: number;
   }>();
@@ -85,13 +84,15 @@ export function NobleLine({
           const landingTarget = landingByPosition.get(position);
           const isSelectedMovementTarget = selectedNobleTargetId === noble.instanceId;
           const isDragged = dragState?.instanceId === noble.instanceId;
+          const currentDragIndex = dragState ? reorderIds.indexOf(dragState.instanceId) : -1;
           const dragDelta = dragState ? dragState.currentX - dragState.startX : 0;
+          const swapThreshold = dragState ? dragState.slotWidth * 0.75 : 0;
           const clampedDragDelta =
             dragState && isDragged
               ? clamp(
                   dragDelta,
-                  -dragState.originIndex * dragState.slotWidth,
-                  (reorderIds.length - 1 - dragState.originIndex) * dragState.slotWidth,
+                  currentDragIndex <= 0 ? 0 : -swapThreshold,
+                  currentDragIndex >= reorderIds.length - 1 ? 0 : swapThreshold,
                 )
               : 0;
           const isValidTarget = highlightedNobleIds.has(noble.instanceId) || isMovementTarget || Boolean(landingTarget) || isReorderTarget || Boolean(simpleNobleTarget);
@@ -109,14 +110,12 @@ export function NobleLine({
                   return;
                 }
 
-                const originIndex = reorderIds.indexOf(noble.instanceId);
                 const bounds = event.currentTarget.getBoundingClientRect();
                 event.preventDefault();
                 event.currentTarget.setPointerCapture(event.pointerId);
                 setDragState({
                   currentX: event.clientX,
                   instanceId: noble.instanceId,
-                  originIndex,
                   slotWidth: bounds.width + 8,
                   startX: event.clientX,
                 });
@@ -127,7 +126,38 @@ export function NobleLine({
                 }
 
                 event.preventDefault();
-                setDragState((current) => current ? { ...current, currentX: event.clientX } : current);
+                setDragState((current) => {
+                  if (!current) {
+                    return current;
+                  }
+
+                  const currentIndex = reorderIds.indexOf(current.instanceId);
+
+                  if (currentIndex < 0) {
+                    return { ...current, currentX: event.clientX };
+                  }
+
+                  const delta = event.clientX - current.startX;
+                  const threshold = current.slotWidth * 0.75;
+                  const shouldMoveLeft = delta <= -threshold && currentIndex > 0;
+                  const shouldMoveRight = delta >= threshold && currentIndex < reorderIds.length - 1;
+
+                  if (!shouldMoveLeft && !shouldMoveRight) {
+                    return { ...current, currentX: event.clientX };
+                  }
+
+                  const targetIndex = currentIndex + (shouldMoveLeft ? -1 : 1);
+                  const nextOrder = [...reorderIds];
+                  const [draggedId] = nextOrder.splice(currentIndex, 1);
+                  nextOrder.splice(targetIndex, 0, draggedId);
+                  onReorderDraftChange?.(nextOrder);
+
+                  return {
+                    ...current,
+                    currentX: event.clientX,
+                    startX: current.startX + (shouldMoveLeft ? -current.slotWidth : current.slotWidth),
+                  };
+                });
               }}
               onPointerUp={(event) => {
                 if (dragState?.instanceId !== noble.instanceId) {
@@ -135,25 +165,7 @@ export function NobleLine({
                 }
 
                 event.preventDefault();
-                const delta = clamp(
-                  event.clientX - dragState.startX,
-                  -dragState.originIndex * dragState.slotWidth,
-                  (reorderIds.length - 1 - dragState.originIndex) * dragState.slotWidth,
-                );
-                const targetIndex = clamp(
-                  dragState.originIndex + Math.round(delta / dragState.slotWidth),
-                  0,
-                  reorderIds.length - 1,
-                );
-                  const nextOrder = [...reorderIds];
-                  const [draggedId] = nextOrder.splice(dragState.originIndex, 1);
-                  nextOrder.splice(targetIndex, 0, draggedId);
-
-                  setDragState(undefined);
-
-                  if (targetIndex !== dragState.originIndex) {
-                    onReorderDraftChange?.(nextOrder);
-                  }
+                setDragState(undefined);
                 }}
               style={{
                 transform: isDragged ? `translateX(${clampedDragDelta}px)` : undefined,
