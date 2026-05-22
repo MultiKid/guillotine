@@ -12,12 +12,14 @@ type ActionHandProps = {
   canPlayActions: boolean;
   player?: Player;
   selectedActionCardId?: CardInstanceId;
+  reorderDraftIds?: CardInstanceId[];
   validTargets: ValidActionTarget[];
   canPlayActionCard: (card: CardInstance<ActionCard>) => boolean;
   getActionBlockedReason: (card: CardInstance<ActionCard>) => string | undefined;
   onSelectAction: (cardId: CardInstanceId) => void;
   onClearSelection: () => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
+  onReloadTestHand: () => void;
   onPreviewCard?: (card: BaseCard) => void;
   canTakeNoble: boolean;
   currentPlayerId?: PlayerId;
@@ -28,19 +30,20 @@ export function ActionHand({
   canPlayActions,
   player,
   selectedActionCardId,
+  reorderDraftIds = [],
   validTargets,
   canPlayActionCard,
   getActionBlockedReason,
   onSelectAction,
   onClearSelection,
   onPlayAction,
+  onReloadTestHand,
   onPreviewCard,
   canTakeNoble,
   currentPlayerId,
   onTakeNoble,
 }: ActionHandProps) {
   const selectedAction = player?.hand.find((action) => action.instanceId === selectedActionCardId);
-  const [reorderIds, setReorderIds] = useState<CardInstanceId[]>([]);
   const [selectedPrivateTargetPlayerId, setSelectedPrivateTargetPlayerId] = useState<string | undefined>();
   const isOpinionatedGuards = selectedAction?.card.effectKey === "opinionatedGuards";
   const isLateArrival = selectedAction?.card.effectKey === "lateArrival";
@@ -48,16 +51,10 @@ export function ActionHand({
   const isPrivateHandSelection = selectedAction?.card.effectKey === "lackOfSupport";
   const isCollectedNobleSelection = selectedAction?.card.effectKey === "clericalError";
   const isLineMovementSelection = validTargets.some(isLineMovementTarget);
+  const isSimpleLineNobleSelection = validTargets.some(
+    (target) => target.target.type === "noble" && !isLineMovementTarget(target) && !isOpinionatedGuards,
+  );
   const isPlayerSelection = validTargets.some((target) => target.target.type === "player");
-
-  useEffect(() => {
-    if (!isOpinionatedGuards) {
-      setReorderIds([]);
-      return;
-    }
-
-    setReorderIds(validTargets.flatMap((target) => (target.target.type === "noble" ? [target.target.instanceId] : [])));
-  }, [isOpinionatedGuards, selectedActionCardId, validTargets]);
 
   useEffect(() => {
     if (!isPrivateHandSelection) {
@@ -65,27 +62,15 @@ export function ActionHand({
     }
   }, [isPrivateHandSelection, selectedActionCardId]);
 
-  function moveReorderItem(instanceId: CardInstanceId, direction: -1 | 1) {
-    setReorderIds((currentIds) => {
-      const currentIndex = currentIds.indexOf(instanceId);
-      const nextIndex = currentIndex + direction;
-
-      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentIds.length) {
-        return currentIds;
-      }
-
-      const nextIds = [...currentIds];
-      [nextIds[currentIndex], nextIds[nextIndex]] = [nextIds[nextIndex], nextIds[currentIndex]];
-      return nextIds;
-    });
-  }
-
   return (
     <Card>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">{player ? `${player.name}'s Hand` : "Action Hand"}</h2>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-sm text-stone-600">{canPlayActions ? "May play one action" : "Action already played"}</span>
+          <Button disabled={!player} onClick={onReloadTestHand}>
+            Load Test Hand
+          </Button>
           <Button disabled={!canTakeNoble || !currentPlayerId} onClick={() => currentPlayerId && onTakeNoble(currentPlayerId)}>
             Take Front Noble
           </Button>
@@ -97,35 +82,17 @@ export function ActionHand({
           <h3 className="font-semibold">Choose target for {selectedAction.card.name}</h3>
           <p className="mt-1 text-sm text-stone-700">Only legal targets are shown.</p>
           {isOpinionatedGuards ? (
-            <div className="mt-3 flex flex-col gap-2">
-              {reorderIds.map((instanceId, index) => {
-                const target = validTargets.find(
-                  (candidate) => candidate.target.type === "noble" && candidate.target.instanceId === instanceId,
-                );
-
-                return (
-                  <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-white px-3 py-2" key={instanceId}>
-                    <span className="text-sm font-medium">{target?.nobleName ?? `Noble ${index + 1}`}</span>
-                    <div className="flex gap-1">
-                      <Button disabled={index === 0} onClick={() => moveReorderItem(instanceId, -1)}>
-                        Up
-                      </Button>
-                      <Button disabled={index === reorderIds.length - 1} onClick={() => moveReorderItem(instanceId, 1)}>
-                        Down
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={reorderIds.length === 0}
-                  onClick={() => onPlayAction(selectedAction.instanceId, { type: "reorder-nobles", instanceIds: reorderIds })}
-                >
-                  Confirm Order
-                </Button>
-                <Button onClick={onClearSelection}>Cancel</Button>
-              </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <p className="mr-auto text-sm text-stone-700">
+                Drag highlighted nobles horizontally in the noble line. Confirm when the order looks right.
+              </p>
+              <Button
+                disabled={reorderDraftIds.length === 0}
+                onClick={() => onPlayAction(selectedAction.instanceId, { type: "reorder-nobles", instanceIds: reorderDraftIds })}
+              >
+                Confirm Reorder
+              </Button>
+              <Button onClick={onClearSelection}>Cancel</Button>
             </div>
           ) : isLateArrival ? (
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -169,6 +136,8 @@ export function ActionHand({
             <p className="mt-3 text-sm text-stone-700">
               Choose a highlighted noble in the noble line, then choose one of the highlighted landing spots.
             </p>
+          ) : isSimpleLineNobleSelection ? (
+            <p className="mt-3 text-sm text-stone-700">Choose a highlighted noble in the noble line.</p>
           ) : isPlayerSelection ? (
             <p className="mt-3 text-sm text-stone-700">Choose a highlighted player in the Players panel.</p>
           ) : isPrivateHandSelection ? (

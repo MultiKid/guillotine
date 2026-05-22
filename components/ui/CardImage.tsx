@@ -30,7 +30,8 @@ export function CardImage({ alt, imagePath, className = "", imageClassName = "",
     <div className={className} onClick={onClick}>
       <img
         alt={alt}
-        className={`block w-full rounded-md object-cover ${imageClassName}`}
+        className={`block w-full select-none rounded-md object-cover ${imageClassName}`}
+        draggable={false}
         onError={() => setFailed(true)}
         src={imagePath}
       />

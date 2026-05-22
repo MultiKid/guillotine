@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useReducer, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { ActionHand } from "@/components/game/ActionHand";
 import { CollectedNobles } from "@/components/game/CollectedNobles";
 import { DayTracker } from "@/components/game/DayTracker";
@@ -29,6 +29,7 @@ export function GameBoard() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
   const [selectedActionCardId, setSelectedActionCardId] = useState<CardInstanceId | undefined>();
   const [selectedNobleTargetId, setSelectedNobleTargetId] = useState<CardInstanceId | undefined>();
+  const [reorderDraftIds, setReorderDraftIds] = useState<CardInstanceId[]>([]);
   const [selectedDetailsPlayerId, setSelectedDetailsPlayerId] = useState<string | undefined>();
   const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
   const currentPlayer = selectCurrentPlayer(state);
@@ -43,6 +44,25 @@ export function GameBoard() {
     currentPlayer && selectedAction
       ? getValidActionTargets(state, selectedAction.card.effectKey, { playerId: currentPlayer.id })
       : [];
+  const isReorderAction = selectedAction?.card.effectKey === "opinionatedGuards";
+  const legalReorderIds = isReorderAction
+    ? validTargets
+        .filter((target) => target.target.type === "noble" && typeof target.fromPosition === "number" && typeof target.toPosition !== "number")
+        .sort((first, second) => (first.fromPosition ?? 0) - (second.fromPosition ?? 0))
+        .flatMap((target) => (target.target.type === "noble" ? [target.target.instanceId] : []))
+    : [];
+  const displayedNobles = isReorderAction && reorderDraftIds.length > 0
+    ? applyReorderDraft(state.nobleLine.cards, reorderDraftIds)
+    : state.nobleLine.cards;
+
+  useEffect(() => {
+    if (!isReorderAction) {
+      setReorderDraftIds([]);
+      return;
+    }
+
+    setReorderDraftIds((currentIds) => (haveSameIds(currentIds, legalReorderIds) ? currentIds : legalReorderIds));
+  }, [isReorderAction, selectedActionCardId, legalReorderIds.join("|")]);
 
   function playAction(cardId: CardInstanceId, target?: ActionTarget) {
     if (!currentPlayer) {
@@ -52,6 +72,7 @@ export function GameBoard() {
     dispatch({ type: "PLAY_ACTION_CARD", playerId: currentPlayer.id, cardId, target });
     setSelectedActionCardId(undefined);
     setSelectedNobleTargetId(undefined);
+    setReorderDraftIds([]);
   }
 
   function canPlayActionCard(action: CardInstance<ActionCard>) {
@@ -78,6 +99,18 @@ export function GameBoard() {
     dispatch({ type: "TAKE_FRONT_NOBLE", playerId });
     setSelectedActionCardId(undefined);
     setSelectedNobleTargetId(undefined);
+    setReorderDraftIds([]);
+  }
+
+  function reloadTestHand() {
+    if (!currentPlayer) {
+      return;
+    }
+
+    dispatch({ type: "RELOAD_TEST_HAND", playerId: currentPlayer.id });
+    setSelectedActionCardId(undefined);
+    setSelectedNobleTargetId(undefined);
+    setReorderDraftIds([]);
   }
 
   function discardCallousGuards(cardId: CardInstanceId) {
@@ -88,12 +121,14 @@ export function GameBoard() {
     dispatch({ type: "DISCARD_CALLOUS_GUARDS", playerId: currentPlayer.id, cardId });
     setSelectedActionCardId(undefined);
     setSelectedNobleTargetId(undefined);
+    setReorderDraftIds([]);
   }
 
   function undo() {
     dispatch({ type: "UNDO_LAST_ACTION" });
     setSelectedActionCardId(undefined);
     setSelectedNobleTargetId(undefined);
+    setReorderDraftIds([]);
   }
 
   function resolveInfighting(playerId: string, cardIds: CardInstanceId[]) {
@@ -195,11 +230,14 @@ export function GameBoard() {
       </div>
 
       <NobleLine
-        nobles={state.nobleLine.cards}
+        nobles={displayedNobles}
+        reorderDraftIds={reorderDraftIds}
+        selectedActionEffectKey={selectedAction?.card.effectKey}
         selectedNobleTargetId={selectedNobleTargetId}
         validTargets={validTargets}
         onPlayTarget={(target) => selectedAction && playAction(selectedAction.instanceId, target)}
         onPreviewCard={setPreviewCard}
+        onReorderDraftChange={setReorderDraftIds}
         onSelectNobleTarget={setSelectedNobleTargetId}
       />
 
@@ -210,15 +248,19 @@ export function GameBoard() {
         validTargets={validTargets}
         canPlayActionCard={canPlayActionCard}
         getActionBlockedReason={getActionBlockedReason}
+        reorderDraftIds={reorderDraftIds}
         onSelectAction={(cardId) => {
           setSelectedActionCardId(cardId);
           setSelectedNobleTargetId(undefined);
+          setReorderDraftIds([]);
         }}
         onClearSelection={() => {
           setSelectedActionCardId(undefined);
           setSelectedNobleTargetId(undefined);
+          setReorderDraftIds([]);
         }}
         onPlayAction={playAction}
+        onReloadTestHand={reloadTestHand}
         onPreviewCard={setPreviewCard}
         canTakeNoble={state.phase === "playing" && Boolean(currentPlayer) && state.nobleLine.cards.length > 0}
         currentPlayerId={currentPlayer?.id}
@@ -248,5 +290,28 @@ export function GameBoard() {
       <CardPreviewModal card={previewCard} onClose={() => setPreviewCard(undefined)} />
     </section>
   );
+}
+
+function applyReorderDraft<TCard extends { instanceId: CardInstanceId }>(cards: TCard[], reorderIds: CardInstanceId[]): TCard[] {
+  if (reorderIds.length === 0) {
+    return cards;
+  }
+
+  const reorderSet = new Set(reorderIds);
+  const segmentById = new Map(cards.filter((card) => reorderSet.has(card.instanceId)).map((card) => [card.instanceId, card]));
+  const reorderedSegment = reorderIds.flatMap((instanceId) => {
+    const card = segmentById.get(instanceId);
+    return card ? [card] : [];
+  });
+
+  if (reorderedSegment.length !== reorderIds.length) {
+    return cards;
+  }
+
+  return [...reorderedSegment, ...cards.filter((card) => !reorderSet.has(card.instanceId))];
+}
+
+function haveSameIds(firstIds: CardInstanceId[], secondIds: CardInstanceId[]): boolean {
+  return firstIds.length === secondIds.length && firstIds.every((instanceId, index) => instanceId === secondIds[index]);
 }
 
