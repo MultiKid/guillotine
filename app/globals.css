@@ -2,8 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes lineShuffle {
+  0% {
+    transform: translateX(0);
+  }
+  18% {
+    transform: translateX(18px);
+  }
+  36% {
+    transform: translateX(-14px);
+  }
+  54% {
+    transform: translateX(10px);
+  }
+  72% {
+    transform: translateX(-6px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes confettiFall {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) rotate(0deg);
+  }
+  12% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(110vh) rotate(420deg);
+  }
+}
+
+.animate-confettiFall {
+  animation: confettiFall 3.8s linear infinite;
+}
+
 :root {
   color-scheme: light;
+  --game-background-image: url("/backgrounds/day-cycle/day-12.png");
 }
 
 * {
@@ -12,4 +52,10 @@
 
 body {
   margin: 0;
+}
+
+.game-page-background {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 248, 232, 0.17)),
+    var(--game-background-image) center / cover fixed;
 }

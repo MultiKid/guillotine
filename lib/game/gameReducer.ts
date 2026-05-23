@@ -12,6 +12,8 @@ import { pushGameHistory, undoLastAction } from "@/lib/game/history";
 import { calculateNobleScoreValue, calculatePlayerScore } from "@/lib/game/scoring";
 import type {
   ActionTarget,
+  ActionCard,
+  CardInstance,
   CardInstanceId,
   GameCommand,
   GameLogEntry,
@@ -48,8 +50,9 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
     case "PLAY_ACTION_CARD":
       return state.passScreen.visible ? state : playActionCard(state, command.playerId, command.cardId, command.target);
     case "TAKE_FRONT_NOBLE":
-      return state.passScreen.visible ? state : takeFrontNoble(state, command.playerId);
+      return state.passScreen.visible ? state : takeFrontNoble(state, command.playerId, command.preShuffledLineIds);
     case "END_TURN":
+      return state.passScreen.visible ? state : endTurn(state, command.playerId);
     case "START_NEXT_DAY":
       return state;
     default:
@@ -80,7 +83,14 @@ function resolveInfighting(state: GameState, playerId: PlayerId, cardIds: CardIn
     return state;
   }
 
-  return {
+  const logEntry = createLogEntry(
+    state,
+    `${targetPlayer.name} discarded ${formatActionCardNames(chosenCards)} for Infighting.`,
+    playerId,
+    [playerId],
+  );
+
+  return addBriefingEntries({
     ...state,
     players: state.players.map((player) =>
       player.id === playerId
@@ -100,10 +110,14 @@ function resolveInfighting(state: GameState, playerId: PlayerId, cardIds: CardIn
       visible: true,
     },
     log: [
-      createLogEntry(state, `${targetPlayer.name} discarded ${chosenCards.length} action card${chosenCards.length === 1 ? "" : "s"} for Infighting.`, playerId),
+      logEntry,
       ...state.log,
     ],
-  };
+    detailedLog: [
+      createDetailedLogEntry(state, `${targetPlayer.name} discarded ${formatActionCardNames(chosenCards)} for Infighting.`, playerId),
+      ...state.detailedLog,
+    ],
+  }, [logEntry], pending.originalPlayerId);
 }
 
 function resolveClericalErrorReturn(state: GameState, playerId: PlayerId, nobleId?: CardInstanceId): GameState {
@@ -141,8 +155,14 @@ function resolveClericalErrorReturn(state: GameState, playerId: PlayerId, nobleI
 
   const transferredState = transferCollectedNobleInReducer(state, pending.originalPlayerId, playerId, chosenNoble.instanceId);
   const triggered = applyNobleCollectionTriggers(transferredState, playerId, chosenNoble, { triggerClown: false });
+  const logEntry = createLogEntry(
+    triggered.state,
+    `${targetPlayer.name} completed the Clerical Error exchange with ${originalPlayer.name}.`,
+    playerId,
+    [pending.originalPlayerId, playerId],
+  );
 
-  return {
+  return addBriefingEntries({
     ...triggered.state,
     pendingChoice: undefined,
     returningFromPrivateChoice: true,
@@ -151,10 +171,15 @@ function resolveClericalErrorReturn(state: GameState, playerId: PlayerId, nobleI
     },
     log: [
       ...triggered.logMessages.map((message) => createLogEntry(triggered.state, message, playerId)),
-      createLogEntry(triggered.state, `${targetPlayer.name} completed the Clerical Error exchange with ${originalPlayer.name}.`, playerId),
+      logEntry,
       ...triggered.state.log,
     ],
-  };
+    detailedLog: [
+      ...triggered.logMessages.map((message) => createDetailedLogEntry(triggered.state, message, playerId)),
+      createDetailedLogEntry(triggered.state, `${targetPlayer.name} completed the Clerical Error exchange with ${originalPlayer.name}.`, playerId),
+      ...triggered.state.detailedLog,
+    ],
+  }, [logEntry], pending.originalPlayerId);
 }
 
 function resolveInnocentVictimDiscard(state: GameState, playerId: PlayerId, cardId?: CardInstanceId): GameState {
@@ -187,7 +212,9 @@ function resolveInnocentVictimDiscard(state: GameState, playerId: PlayerId, card
     return state;
   }
 
-  return {
+  const logEntry = createLogEntry(state, `${targetPlayer.name} discarded ${chosenCard.card.name} for Innocent Victim.`, playerId, [playerId]);
+
+  return addBriefingEntries({
     ...state,
     players: state.players.map((player) =>
       player.id === playerId
@@ -207,10 +234,14 @@ function resolveInnocentVictimDiscard(state: GameState, playerId: PlayerId, card
       visible: pending.returnToPassScreen,
     },
     log: [
-      createLogEntry(state, `${targetPlayer.name} discarded 1 action card for Innocent Victim.`, playerId),
+      logEntry,
       ...state.log,
     ],
-  };
+    detailedLog: [
+      createDetailedLogEntry(state, `${targetPlayer.name} discarded ${chosenCard.card.name} for Innocent Victim.`, playerId),
+      ...state.detailedLog,
+    ],
+  }, [logEntry], pending.originalPlayerId);
 }
 
 function resolveClownGift(state: GameState, playerId: PlayerId, targetPlayerId: PlayerId): GameState {
@@ -236,8 +267,9 @@ function resolveClownGift(state: GameState, playerId: PlayerId, targetPlayerId: 
   const nextCurrentPlayerIndex = pending.advanceTurnAfterChoice
     ? getNextPlayerIndex(state.currentPlayerIndex, state.players.length)
     : state.currentPlayerIndex;
+  const logEntry = createLogEntry(state, `${receivingPlayer.name} gave The Clown to ${targetPlayer.name}.`, playerId, [targetPlayerId]);
 
-  const resolvedState: GameState = {
+  const resolvedState: GameState = addBriefingEntries({
     ...state,
     players: state.players.map((player) => {
       if (player.id === playerId) {
@@ -274,10 +306,14 @@ function resolveClownGift(state: GameState, playerId: PlayerId, targetPlayerId: 
       visible: pending.returnToPassScreen,
     },
     log: [
-      createLogEntry(state, `${receivingPlayer.name} gave The Clown to ${targetPlayer.name}.`, playerId),
+      logEntry,
       ...state.log,
     ],
-  };
+    detailedLog: [
+      createDetailedLogEntry(state, `${receivingPlayer.name} gave The Clown to ${targetPlayer.name}.`, playerId),
+      ...state.detailedLog,
+    ],
+  }, [logEntry], playerId);
 
   if (resolvedState.nobleLine.cards.length === 0) {
     return endCurrentDay(resolvedState, `Day ${resolvedState.day} ended because the noble line is empty.`);
@@ -384,6 +420,10 @@ function discardCallousGuards(state: GameState, playerId: PlayerId, cardId: Card
       createLogEntry(historyState, `${currentPlayer.name} discarded Callous Guards.`, playerId),
       ...historyState.log,
     ],
+    detailedLog: [
+      createDetailedLogEntry(historyState, `${currentPlayer.name} discarded Callous Guards.`, playerId),
+      ...historyState.detailedLog,
+    ],
   };
 }
 
@@ -404,7 +444,6 @@ function reloadTestHand(state: GameState, playerId: PlayerId): GameState {
   const testPool = shuffleDeck([
     ...player.hand,
     ...historyState.actionDeck.drawPile,
-    ...historyState.actionDeck.discardPile,
   ]);
   const newHand = testPool.slice(0, STARTING_HAND_SIZE);
   const remainingActions = testPool.slice(newHand.length);
@@ -421,7 +460,7 @@ function reloadTestHand(state: GameState, playerId: PlayerId): GameState {
     ),
     actionDeck: {
       drawPile: remainingActions,
-      discardPile: [],
+      discardPile: historyState.actionDeck.discardPile,
     },
     log: [
       createLogEntry(
@@ -430,6 +469,14 @@ function reloadTestHand(state: GameState, playerId: PlayerId): GameState {
         playerId,
       ),
       ...historyState.log,
+    ],
+    detailedLog: [
+      createDetailedLogEntry(
+        historyState,
+        `${currentPlayer.name} reloaded a fresh test hand of ${newHand.length} action card${newHand.length === 1 ? "" : "s"}: ${formatActionCardNames(newHand)}.`,
+        playerId,
+      ),
+      ...historyState.detailedLog,
     ],
   };
 }
@@ -533,6 +580,16 @@ function playActionCard(
     return state;
   }
 
+  const affectedPlayerIds = getActionAffectedPlayerIds(state, actionCard.card.effectKey, target, playerId);
+  const mainLogEntry = createLogEntry(
+    result.state,
+    result.logMessage ?? `${currentPlayer.name} played ${actionCard.card.name} and ${result.message}.`,
+    playerId,
+    affectedPlayerIds,
+  );
+  const extraLogEntries = (result.extraLogMessages ?? []).map((message) =>
+    createLogEntry(result.state, message, playerId, affectedPlayerIds),
+  );
   const stateWithDiscard: GameState = {
     ...result.state,
     passScreen: result.state.passScreen,
@@ -543,37 +600,46 @@ function playActionCard(
         : [actionCard, ...result.state.actionDeck.discardPile],
     },
     log: [
-      createLogEntry(
-        result.state,
-        result.logMessage ?? `${currentPlayer.name} played ${actionCard.card.name} and ${result.message}.`,
-        playerId,
-      ),
-      ...(result.extraLogMessages ?? []).map((message) => createLogEntry(result.state, message, playerId)),
+      mainLogEntry,
+      ...extraLogEntries,
       ...result.state.log,
     ],
+    detailedLog: [
+      createDetailedLogEntry(
+        result.state,
+        result.detailLogMessage ?? result.logMessage ?? `${currentPlayer.name} played ${actionCard.card.name} and ${result.message}.`,
+        playerId,
+      ),
+      ...((result.extraDetailLogMessages ?? result.extraLogMessages) ?? []).map((message) =>
+        createDetailedLogEntry(result.state, message, playerId),
+      ),
+      ...result.state.detailedLog,
+    ],
   };
-  const afterActionTriggers = applyAfterActionCardTriggers(stateWithDiscard);
-  const stateAfterActionTriggers: GameState = {
+  const stateWithBriefings = addBriefingEntries(stateWithDiscard, [mainLogEntry, ...extraLogEntries], playerId);
+  const afterActionTriggers = applyAfterActionCardTriggers(stateWithBriefings);
+  const stateAfterActionTriggersWithoutSummary: GameState = {
     ...afterActionTriggers.state,
     log: [
       ...afterActionTriggers.logMessages.map((message) => createLogEntry(afterActionTriggers.state, message, playerId)),
       ...afterActionTriggers.state.log,
     ],
+    detailedLog: [
+      ...afterActionTriggers.logMessages.map((message) => createDetailedLogEntry(afterActionTriggers.state, message, playerId)),
+      ...afterActionTriggers.state.detailedLog,
+    ],
   };
+  const stateAfterActionTriggers = updateTurnSummaryFromPlayerDelta(state, stateAfterActionTriggersWithoutSummary, playerId);
 
   if (stateAfterActionTriggers.nobleLine.cards.length === 0 && !stateAfterActionTriggers.pendingChoice && !result.skipEmptyLineDayEnd) {
     return endCurrentDay(stateAfterActionTriggers, "The noble line is empty.");
   }
 
   if (result.endsTurn) {
-    return showPassScreen({
+    return {
       ...stateAfterActionTriggers,
-      currentPlayerIndex: getNextPlayerIndex(stateAfterActionTriggers.currentPlayerIndex, stateAfterActionTriggers.players.length),
-      turnStep: "playActionOptional",
-      turnEffects: {
-        endDayAfterTurn: false,
-      },
-    });
+      turnStep: "turnComplete",
+    };
   }
 
   return {
@@ -582,14 +648,16 @@ function playActionCard(
   };
 }
 
-function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
+function takeFrontNoble(state: GameState, playerId: PlayerId, preShuffledLineIds?: CardInstanceId[]): GameState {
   const currentPlayer = state.players[state.currentPlayerIndex];
   if (state.phase !== "playing" || !currentPlayer || currentPlayer.id !== playerId || state.nobleLine.cards.length === 0) {
     return state;
   }
 
   const historyState = pushGameHistory(state, `${currentPlayer.name} took the front noble.`);
-  const confused = applyBeforeNobleCollectionTriggers(historyState, playerId);
+  const confused = preShuffledLineIds
+    ? applyPreShuffledBeforeNobleCollection(historyState, playerId, preShuffledLineIds)
+    : applyBeforeNobleCollectionTriggers(historyState, playerId);
   const frontNoble = confused.state.nobleLine.cards[0];
 
   if (!frontNoble) {
@@ -621,13 +689,12 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
   const collectedPointValue = collectingPlayerAfterUpdate
     ? calculateNobleScoreValue(collectingPlayerAfterUpdate, frontNoble)
     : frontNoble.card.points;
-  const nextPlayerIndex = getNextPlayerIndex(confused.state.currentPlayerIndex, confused.state.players.length);
   const baseNextState: GameState = {
     ...confused.state,
     phase: "playing",
     players: updatedPlayers,
-    currentPlayerIndex: nextPlayerIndex,
-    turnStep: "playActionOptional",
+    currentPlayerIndex: confused.state.currentPlayerIndex,
+    turnStep: "turnComplete",
     passScreen: {
       visible: false,
     },
@@ -644,6 +711,11 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
       ...confused.logMessages.map((message) => createLogEntry(confused.state, message, playerId)),
       ...confused.state.log,
     ],
+    detailedLog: [
+      createDetailedLogEntry(confused.state, `${currentPlayer.name} took ${frontNoble.card.name} for ${collectedPointValue} points.`, playerId),
+      ...confused.logMessages.map((message) => createDetailedLogEntry(confused.state, message, playerId)),
+      ...confused.state.detailedLog,
+    ],
     winnerIds: [],
   };
   const triggered = applyNobleCollectionTriggers(baseNextState, playerId, frontNoble);
@@ -653,32 +725,111 @@ function takeFrontNoble(state: GameState, playerId: PlayerId): GameState {
       ...triggered.logMessages.map((message) => createLogEntry(triggered.state, message, playerId)),
       ...triggered.state.log,
     ],
+    detailedLog: [
+      ...triggered.logMessages.map((message) => createDetailedLogEntry(triggered.state, message, playerId)),
+      ...triggered.state.detailedLog,
+    ],
   };
 
-  if (nextState.nobleLine.cards.length === 0 && !nextState.pendingChoice) {
-    return endCurrentDay(nextState, `Day ${nextState.day} ended because the noble line is empty.`);
+  return updateTurnSummaryFromPlayerDelta(state, nextState, playerId);
+}
+
+function endTurn(state: GameState, playerId: PlayerId): GameState {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+
+  if (state.phase !== "playing" || state.turnStep !== "turnComplete" || !currentPlayer || currentPlayer.id !== playerId) {
+    return state;
   }
 
-  const dayResolvedState = nextState.turnEffects.endDayAfterTurn
-    ? endCurrentDay(nextState, `A day-ending effect ended Day ${nextState.day}.`)
-    : nextState;
+  const turnSummaryEntry = createTurnSummaryBriefingEntry(state, currentPlayer);
+  const stateWithTurnSummaryBriefing = turnSummaryEntry
+    ? addBriefingEntries(state, [turnSummaryEntry], playerId)
+    : state;
+  const nextPlayerIndex = getNextPlayerIndex(state.currentPlayerIndex, state.players.length);
+  const advancedState: GameState = {
+    ...stateWithTurnSummaryBriefing,
+    currentPlayerIndex: nextPlayerIndex,
+    playerBriefings: {
+      ...stateWithTurnSummaryBriefing.playerBriefings,
+      [playerId]: [],
+    },
+    turnStep: "playActionOptional",
+    turnEffects: {
+      endDayAfterTurn: false,
+    },
+    turnSummary: {
+      nobleNames: [],
+      pointDelta: 0,
+    },
+  };
 
-  if (dayResolvedState.phase === "gameEnd" || dayResolvedState.pendingChoice) {
-    return dayResolvedState;
+  if (state.nobleLine.cards.length === 0 && !state.pendingChoice) {
+    return endCurrentDay(advancedState, `Day ${state.day} ended because the noble line is empty.`);
   }
 
-  return showPassScreen(dayResolvedState);
+  if (state.turnEffects.endDayAfterTurn) {
+    return endCurrentDay(advancedState, `A day-ending effect ended Day ${state.day}.`);
+  }
+
+  return showPassScreen(advancedState);
+}
+
+function applyPreShuffledBeforeNobleCollection(
+  state: GameState,
+  playerId: PlayerId,
+  preShuffledLineIds: CardInstanceId[],
+): { state: GameState; logMessages: string[] } {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  if (!player?.shuffleLineBeforeNextCollection) {
+    return applyBeforeNobleCollectionTriggers(state, playerId);
+  }
+
+  const lineById = new Map(state.nobleLine.cards.map((noble) => [noble.instanceId, noble]));
+  const shuffledLine = preShuffledLineIds.flatMap((instanceId) => {
+    const noble = lineById.get(instanceId);
+    return noble ? [noble] : [];
+  });
+
+  if (shuffledLine.length !== state.nobleLine.cards.length) {
+    return applyBeforeNobleCollectionTriggers(state, playerId);
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) =>
+        candidate.id === playerId
+          ? {
+              ...candidate,
+              shuffleLineBeforeNextCollection: false,
+            }
+          : candidate,
+      ),
+      nobleLine: {
+        cards: shuffledLine,
+      },
+    },
+    logMessages: [`Confusion in Line triggered for ${player.name}.`],
+  };
 }
 
 function endCurrentDay(state: GameState, reason: string): GameState {
   const discardedNobles = state.nobleLine.cards;
   const nextDay = state.day + 1;
+  const dayEndMessage = `${reason} Discarded ${discardedNobles.length} noble${discardedNobles.length === 1 ? "" : "s"} from the line.`;
   const baseLog = [
-    createLogEntry(
-      state,
-      `${reason} Discarded ${discardedNobles.length} noble${discardedNobles.length === 1 ? "" : "s"} from the line.`,
-    ),
+    createLogEntry(state, dayEndMessage),
     ...state.log,
+  ];
+  const baseDetailedLog = [
+    createDetailedLogEntry(
+      state,
+      discardedNobles.length > 0
+        ? `${dayEndMessage} Discarded nobles: ${discardedNobles.map((noble) => noble.card.name).join(", ")}.`
+        : dayEndMessage,
+    ),
+    ...state.detailedLog,
   ];
 
   if (state.day >= state.maxDays) {
@@ -692,6 +843,7 @@ function endCurrentDay(state: GameState, reason: string): GameState {
         cards: [],
       },
       log: baseLog,
+      detailedLog: baseDetailedLog,
     });
   }
 
@@ -709,6 +861,7 @@ function endCurrentDay(state: GameState, reason: string): GameState {
         cards: [],
       },
       log: baseLog,
+      detailedLog: baseDetailedLog,
     });
   }
 
@@ -731,6 +884,7 @@ function endCurrentDay(state: GameState, reason: string): GameState {
       cards: nextLine,
     },
     log: baseLog,
+    detailedLog: baseDetailedLog,
     winnerIds: [],
   });
 }
@@ -752,13 +906,169 @@ function getNextPlayerIndex(currentIndex: number, playerCount: number): number {
   return (currentIndex + 1) % playerCount;
 }
 
-function createLogEntry(state: GameState, message: string, playerId?: PlayerId): GameLogEntry {
+function createLogEntry(
+  state: GameState,
+  message: string,
+  playerId?: PlayerId,
+  affectedPlayerIds: PlayerId[] = [],
+): GameLogEntry {
   return {
     id: `log-${Date.now()}-${state.log.length + 1}`,
     message,
     day: state.day,
     playerId,
+    affectedPlayerIds,
   };
+}
+
+function createDetailedLogEntry(state: GameState, message: string, playerId?: PlayerId): GameLogEntry {
+  return {
+    id: `detail-log-${Date.now()}-${state.detailedLog.length + 1}`,
+    message,
+    day: state.day,
+    playerId,
+  };
+}
+
+function formatActionCardNames(cards: CardInstance<ActionCard>[]): string {
+  if (cards.length === 0) {
+    return "no action cards";
+  }
+
+  return cards.map((card) => card.card.name).join(", ");
+}
+
+function addBriefingEntries(state: GameState, entries: GameLogEntry[], excludePlayerId?: PlayerId): GameState {
+  if (entries.length === 0) {
+    return state;
+  }
+
+  const playerBriefings = { ...state.playerBriefings };
+
+  entries.forEach((entry) => {
+    entry.affectedPlayerIds?.forEach((playerId) => {
+      if (playerId === excludePlayerId) {
+        return;
+      }
+
+      playerBriefings[playerId] = [...(playerBriefings[playerId] ?? []), entry.message];
+    });
+  });
+
+  return {
+    ...state,
+    playerBriefings,
+  };
+}
+
+function updateTurnSummaryFromPlayerDelta(previousState: GameState, nextState: GameState, playerId: PlayerId): GameState {
+  const previousPlayer = previousState.players.find((player) => player.id === playerId);
+  const nextPlayer = nextState.players.find((player) => player.id === playerId);
+
+  if (!previousPlayer || !nextPlayer) {
+    return nextState;
+  }
+
+  const previousNobleIds = new Set(previousPlayer.collectedNobles.map((noble) => noble.instanceId));
+  const addedNobleNames = nextPlayer.collectedNobles
+    .filter((noble) => !previousNobleIds.has(noble.instanceId))
+    .map((noble) => noble.card.name);
+  const pointDelta = nextPlayer.score - previousPlayer.score;
+
+  if (addedNobleNames.length === 0 && pointDelta === 0) {
+    return nextState;
+  }
+
+  const currentSummary =
+    nextState.turnSummary.playerId === playerId
+      ? nextState.turnSummary
+      : {
+          playerId,
+          nobleNames: [],
+          pointDelta: 0,
+        };
+
+  return {
+    ...nextState,
+    turnSummary: {
+      playerId,
+      nobleNames: [...currentSummary.nobleNames, ...addedNobleNames],
+      pointDelta: currentSummary.pointDelta + pointDelta,
+    },
+  };
+}
+
+function createTurnSummaryBriefingEntry(state: GameState, player: Player): GameLogEntry | undefined {
+  const summary = state.turnSummary.playerId === player.id ? state.turnSummary : undefined;
+
+  if (!summary || (summary.nobleNames.length === 0 && summary.pointDelta === 0)) {
+    return undefined;
+  }
+
+  const nobleText =
+    summary.nobleNames.length > 0
+      ? `collected ${formatList(summary.nobleNames)}`
+      : "collected no nobles";
+  const pointText = `${summary.pointDelta >= 0 ? "gained" : "lost"} ${Math.abs(summary.pointDelta)} point${Math.abs(summary.pointDelta) === 1 ? "" : "s"}`;
+  const affectedPlayerIds = state.players.map((candidate) => candidate.id).filter((id) => id !== player.id);
+
+  return createLogEntry(
+    state,
+    `${player.name}'s turn summary: ${nobleText}; ${pointText} total.`,
+    player.id,
+    affectedPlayerIds,
+  );
+}
+
+function formatList(items: string[]): string {
+  if (items.length <= 1) {
+    return items[0] ?? "";
+  }
+
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`;
+  }
+
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+function getActionAffectedPlayerIds(
+  state: GameState,
+  effectKey: string,
+  target: ActionTarget | undefined,
+  playerId: PlayerId,
+): PlayerId[] {
+  const allPlayerIds = state.players.map((player) => player.id);
+
+  switch (effectKey) {
+    case "callousGuards":
+    case "rainDelay":
+    case "massConfusion":
+    case "escape":
+    case "millingInLine":
+    case "theLongWalk":
+    case "scarletPimpernel":
+      return allPlayerIds;
+    case "forcedBreak":
+      return allPlayerIds.filter((id) => id !== playerId);
+    case "informationExchange":
+    case "rushJob":
+    case "missed":
+    case "afterYou":
+    case "confusionInLine":
+    case "missingHeads":
+    case "infighting":
+    case "lackOfSupport":
+      return target?.type === "player" ? [target.playerId] : [];
+    case "toughCrowd":
+      return target?.type === "player" ? [target.playerId] : [];
+    case "clericalError":
+      return target?.type === "collected-noble" ? [playerId, target.playerId] : [];
+    case "twistOfFate":
+      return target?.type === "in-front-action" ? [target.playerId] : [];
+    default:
+      return [];
+  }
 }
 
 function finishGame(state: GameState): GameState {

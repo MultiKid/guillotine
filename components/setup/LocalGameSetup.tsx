@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -50,7 +50,7 @@ export function LocalGameSetup({ onStartGame }: LocalGameSetupProps) {
               Player {index + 1}
               <div className="flex gap-2">
                 <input
-                  className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-stone-950 outline-none focus:border-stone-500"
+                  className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white/45 px-3 py-2 text-stone-950 outline-none backdrop-blur-sm focus:border-stone-500"
                   value={name}
                   onChange={(event) => updatePlayerName(index, event.target.value)}
                 />

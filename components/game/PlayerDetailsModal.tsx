@@ -50,7 +50,7 @@ export function PlayerDetailsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/50 p-4" onClick={onClose}>
       <div
-        className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-stone-300 bg-white p-4 shadow-2xl"
+        className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-stone-300 bg-white/50 p-4 shadow-2xl backdrop-blur-sm"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -62,7 +62,7 @@ export function PlayerDetailsModal({
         </div>
 
         {isTwistOfFateActive ? (
-          <div className="mt-4 rounded-md border border-amber-400 bg-amber-50 p-3">
+          <div className="mt-4 rounded-md border border-amber-400 bg-amber-50/45 p-3 backdrop-blur-sm">
             <p className="text-sm font-medium text-amber-950">Twist of Fate: choose a card in front of a player.</p>
             {pendingTwistTarget ? (
               <div className="mt-2 flex flex-wrap items-center gap-2">

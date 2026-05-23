@@ -40,7 +40,7 @@ export function PersistentActionCards({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Cards In Front</h2>
         <select
-          className="rounded-md border border-stone-300 bg-white px-2 py-1 text-sm"
+          className="rounded-md border border-stone-300 bg-white/40 px-2 py-1 text-sm backdrop-blur-sm"
           disabled={players.length === 0}
           onChange={(event) => onSelectPlayer(event.target.value)}
           value={selectedPlayer?.id ?? ""}
@@ -54,7 +54,7 @@ export function PersistentActionCards({
       </div>
 
       {isTwistOfFateActive ? (
-        <div className="mt-3 rounded-md border border-amber-400 bg-amber-50 p-3">
+        <div className="mt-3 rounded-md border border-amber-400 bg-amber-50/45 p-3 backdrop-blur-sm">
           <p className="text-sm font-medium text-amber-950">Twist of Fate: choose a card in front of any player.</p>
           {pendingTarget ? (
             <div className="mt-2 flex flex-col gap-2">
@@ -89,7 +89,7 @@ export function PersistentActionCards({
             return (
               <div
                 className={`rounded-md border px-3 py-2 ${
-                  isSelected ? "border-amber-600 bg-amber-100" : "border-amber-300 bg-amber-50"
+                  isSelected ? "border-amber-600 bg-amber-100/50" : "border-amber-300 bg-amber-50/45"
                 }`}
                 key={action.instanceId}
               >

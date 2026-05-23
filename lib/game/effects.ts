@@ -39,6 +39,8 @@ type ActionEffectResult = {
   allowsAnotherAction?: boolean;
   logMessage?: string;
   extraLogMessages?: string[];
+  detailLogMessage?: string;
+  extraDetailLogMessages?: string[];
   skipEmptyLineDayEnd?: boolean;
   skipDiscard?: boolean;
 };
@@ -293,6 +295,7 @@ const lineAlteringActionEffects = new Set<ActionEffectKey>([
   "stumble",
   "swapFirstTwoNobles",
   "theLongWalk",
+  "tisFarBetterThing",
   "trip",
   "wasThatMyName",
 ]);
@@ -467,6 +470,7 @@ function createRatBreakEffect(): ActionEffectDefinition {
           instanceId: action.instanceId,
         },
         label: `Take ${action.card.name}`,
+        revealedAction: action,
       })),
     apply: takeActionFromDiscard,
   };
@@ -1057,7 +1061,7 @@ function takeActionFromDiscard(state: GameState, context: ActionEffectContext): 
       },
     },
     applied: true,
-    message: "returned one chosen action card from the discard pile to hand",
+    message: `returned ${chosenAction.card.name} from the discard pile to hand`,
   };
 }
 
@@ -1169,6 +1173,7 @@ function tradeHands(state: GameState, context: ActionEffectContext): ActionEffec
     },
     applied: true,
     logMessage: `${currentPlayer.name} traded hands with ${targetPlayer.name}.`,
+    detailLogMessage: `${currentPlayer.name} traded hands with ${targetPlayer.name}. ${currentPlayer.name} gave: ${formatCardNames(currentPlayer.hand)}. ${targetPlayer.name} gave: ${formatCardNames(targetPlayer.hand)}.`,
     message: `traded hands with ${targetPlayer.name}`,
   };
 }
@@ -1498,8 +1503,9 @@ function discardActionFromPlayerHand(state: GameState, context: ActionEffectCont
       },
     },
     applied: true,
-    logMessage: `${currentPlayerName} used Lack of Support on ${targetPlayer.name}.`,
-    message: `used Lack of Support on ${targetPlayer.name}`,
+    logMessage: `${currentPlayerName} used Lack of Support on ${targetPlayer.name} and discarded ${chosenAction.card.name}.`,
+    detailLogMessage: `${currentPlayerName} used Lack of Support on ${targetPlayer.name} and discarded ${chosenAction.card.name} from their hand.`,
+    message: `used Lack of Support on ${targetPlayer.name} and discarded ${chosenAction.card.name}`,
   };
 }
 
@@ -1547,6 +1553,7 @@ function transferCollectedNoble(state: GameState, fromPlayerId: PlayerId, toPlay
 
 function forceOtherPlayersToDiscard(state: GameState, context: ActionEffectContext): ActionEffectResult {
   const discardedCards: GameState["actionDeck"]["discardPile"] = [];
+  const discardedDetails: string[] = [];
 
   const players = state.players.map((player) => {
     if (player.id === context.playerId || player.hand.length === 0) {
@@ -1561,6 +1568,7 @@ function forceOtherPlayersToDiscard(state: GameState, context: ActionEffectConte
     }
 
     discardedCards.push(discardedCard);
+    discardedDetails.push(`${player.name} discarded ${discardedCard.card.name}`);
 
     return {
       ...player,
@@ -1578,17 +1586,23 @@ function forceOtherPlayersToDiscard(state: GameState, context: ActionEffectConte
       },
     },
     applied: true,
-    message: `made ${discardedCards.length} other player${discardedCards.length === 1 ? "" : "s"} discard a random action card`,
+    message:
+      discardedDetails.length > 0
+        ? `made other players discard random action cards: ${discardedDetails.join("; ")}`
+        : "made no players discard because no other player had action cards",
   };
 }
 
 function shuffleHandsAndRedeal(state: GameState): ActionEffectResult {
+  const originalHandDetails = state.players.map((player) => `${player.name} had ${formatCardNames(player.hand)}`);
   const cardsFromHands = state.players.flatMap((player) => player.hand);
   let actionPool = shuffleDeck([...state.actionDeck.drawPile, ...cardsFromHands]);
+  const redealtHandDetails: string[] = [];
 
   const players = state.players.map((player) => {
     const newHand = actionPool.slice(0, STARTING_HAND_SIZE);
     actionPool = actionPool.slice(newHand.length);
+    redealtHandDetails.push(`${player.name} received ${formatCardNames(newHand)}`);
 
     return {
       ...player,
@@ -1607,6 +1621,7 @@ function shuffleHandsAndRedeal(state: GameState): ActionEffectResult {
     },
     applied: true,
     message: `shuffled all hands into the action deck and dealt new hands of up to ${STARTING_HAND_SIZE} cards`,
+    detailLogMessage: `Rain Delay details: ${originalHandDetails.join("; ")}. ${redealtHandDetails.join("; ")}.`,
   };
 }
 
@@ -1816,6 +1831,7 @@ function drawActionCards(state: GameState, playerId: PlayerId, count: number): A
     },
     applied: true,
     message: `drew ${cardsToDraw.length} action card${cardsToDraw.length === 1 ? "" : "s"}`,
+    detailLogMessage: `${getPlayerName(state, playerId)} drew ${formatCardNames(cardsToDraw)}.`,
   };
 }
 
@@ -2149,6 +2165,14 @@ function addCollectedNobleToPlayer(state: GameState, playerId: PlayerId, noble: 
 
 function getPlayerName(state: GameState, playerId: PlayerId): string {
   return state.players.find((player) => player.id === playerId)?.name ?? "Player";
+}
+
+function formatCardNames(cards: CardInstance<ActionCard>[]): string {
+  if (cards.length === 0) {
+    return "no cards";
+  }
+
+  return cards.map((card) => card.card.name).join(", ");
 }
 
 function withNobleLine(state: GameState, cards: CardInstance<NobleCard>[]): GameState {

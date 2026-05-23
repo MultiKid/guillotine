@@ -23,7 +23,7 @@ export function PlayerPanel({
   );
 
   return (
-    <Card className={isSelectingPlayerTarget ? "border-amber-500 bg-amber-50 shadow-[0_0_18px_rgba(245,158,11,0.18)]" : undefined}>
+    <Card className={isSelectingPlayerTarget ? "border-amber-500 bg-amber-50/45 shadow-[0_0_18px_rgba(245,158,11,0.18)]" : undefined}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Players</h2>
         {isSelectingPlayerTarget ? <span className="text-xs font-semibold text-amber-800">Choose target player</span> : null}
@@ -40,12 +40,13 @@ export function PlayerPanel({
               className={`rounded-md border p-2 text-left transition ${
                 isSelectingPlayerTarget
                   ? isValidPlayerTarget
-                    ? "border-amber-500 bg-amber-100 hover:bg-amber-200"
-                    : "cursor-not-allowed border-stone-200 bg-stone-100 opacity-45"
+                    ? "border-amber-500 bg-amber-100/45 hover:bg-amber-200/55"
+                    : "cursor-not-allowed border-stone-200 bg-stone-100/35 opacity-45"
                   : isCurrentPlayer
-                    ? "cursor-default border-stone-900 bg-stone-100"
-                    : "border-stone-300 bg-white hover:border-stone-900 hover:bg-stone-50"
+                    ? "cursor-default border-stone-900 bg-stone-100/40"
+                  : "border-stone-300 bg-white/35 hover:border-stone-900 hover:bg-stone-50/45"
               }`}
+              data-player-panel-id={player.id}
               disabled={isDisabled}
               key={player.id}
               onClick={() =>

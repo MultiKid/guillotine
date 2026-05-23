@@ -122,6 +122,7 @@ export interface GameLogEntry {
   message: string;
   day: number;
   playerId?: PlayerId;
+  affectedPlayerIds?: PlayerId[];
 }
 
 export interface PassScreenState {
@@ -130,6 +131,12 @@ export interface PassScreenState {
 
 export interface TurnEffectsState {
   endDayAfterTurn: boolean;
+}
+
+export interface TurnSummaryState {
+  playerId?: PlayerId;
+  nobleNames: string[];
+  pointDelta: number;
 }
 
 export type PendingPrivateChoice =
@@ -174,6 +181,7 @@ export interface GameState {
   turnStep: TurnStep;
   passScreen: PassScreenState;
   turnEffects: TurnEffectsState;
+  turnSummary: TurnSummaryState;
   pendingChoice?: PendingPrivateChoice;
   returningFromPrivateChoice: boolean;
   notice?: string;
@@ -181,6 +189,8 @@ export interface GameState {
   actionDeck: DeckState<ActionCard>;
   nobleLine: NobleLine;
   log: GameLogEntry[];
+  detailedLog: GameLogEntry[];
+  playerBriefings: Record<PlayerId, string[]>;
   gameHistory: GameSnapshot[];
   winnerIds: PlayerId[];
 }
@@ -213,7 +223,7 @@ export type GameCommand =
       cardId: CardInstanceId;
       target?: ActionTarget;
     }
-  | { type: "TAKE_FRONT_NOBLE"; playerId: PlayerId }
+  | { type: "TAKE_FRONT_NOBLE"; playerId: PlayerId; preShuffledLineIds?: CardInstanceId[] }
   | { type: "END_TURN"; playerId: PlayerId }
   | { type: "START_NEXT_DAY" }
   | { type: "UNDO_LAST_ACTION" };

@@ -70,7 +70,7 @@ export function PrivateChoicePanel({
     originalPlayer?.collectedNobles.filter((noble) => noble.instanceId !== pendingChoice.excludedNobleInstanceId) ?? [];
 
   return (
-    <section className="fixed inset-0 z-40 min-h-screen overflow-auto bg-stone-100 p-6">
+    <section className="game-page-background fixed inset-0 z-40 min-h-screen overflow-auto p-6">
       <div className="mx-auto max-w-3xl">
         <Card>
           <h1 className="text-2xl font-bold">Clerical Error</h1>
@@ -132,7 +132,7 @@ function ClownGiftChoice({
   const targets = players.filter((player) => player.id !== receivingPlayerId);
 
   return (
-    <section className="fixed inset-0 z-40 min-h-screen overflow-auto bg-stone-100 p-6">
+    <section className="game-page-background fixed inset-0 z-40 min-h-screen overflow-auto p-6">
       <div className="mx-auto max-w-3xl">
         <Card>
           <h1 className="text-2xl font-bold">The Clown</h1>
@@ -165,7 +165,7 @@ function InnocentVictimChoice({
   onPreviewCard: (card: BaseCard) => void;
 }) {
   return (
-    <section className="fixed inset-0 z-40 min-h-screen overflow-auto bg-stone-100 p-6">
+    <section className="game-page-background fixed inset-0 z-40 min-h-screen overflow-auto p-6">
       <div className="mx-auto max-w-3xl">
         <Card>
           <h1 className="text-2xl font-bold">Innocent Victim</h1>
@@ -176,7 +176,7 @@ function InnocentVictimChoice({
           {player && player.hand.length > 0 ? (
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {player.hand.map((action) => (
-                <div className="rounded-md border border-amber-300 bg-amber-50 p-3" key={action.instanceId}>
+                <div className="rounded-md border border-amber-300 bg-amber-50/45 p-3 backdrop-blur-sm" key={action.instanceId}>
                   <CardImage
                     alt={action.card.name}
                     className="cursor-pointer"
@@ -237,7 +237,7 @@ function InfightingChoice({
   }
 
   return (
-    <section className="fixed inset-0 z-40 min-h-screen overflow-auto bg-stone-100 p-6">
+    <section className="game-page-background fixed inset-0 z-40 min-h-screen overflow-auto p-6">
       <div className="mx-auto max-w-3xl">
         <Card>
           <h1 className="text-2xl font-bold">Infighting</h1>
@@ -253,7 +253,7 @@ function InfightingChoice({
                 return (
                   <button
                     className={`rounded-md border p-3 text-left ${
-                      isSelected ? "border-amber-600 bg-amber-100" : "border-amber-300 bg-amber-50"
+                      isSelected ? "border-amber-600 bg-amber-100/50" : "border-amber-300 bg-amber-50/45"
                     }`}
                     key={action.instanceId}
                     onClick={() => toggleCard(action.instanceId)}

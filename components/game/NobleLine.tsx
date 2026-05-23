@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { CardImage } from "@/components/ui/CardImage";
 import { getNobleColorStyle, selectedNobleColorStyle } from "@/lib/cards/nobleColors";
@@ -10,6 +10,8 @@ import type { ActionEffectKey, ActionTarget, CardInstance, CardInstanceId, Noble
 import type { PointerEvent } from "react";
 
 type NobleLineProps = {
+  hiddenNobleCardIds?: CardInstanceId[];
+  isShuffling?: boolean;
   nobles: CardInstance<NobleCard>[];
   validTargets?: ValidActionTarget[];
   selectedNobleTargetId?: CardInstanceId;
@@ -22,6 +24,8 @@ type NobleLineProps = {
 };
 
 export function NobleLine({
+  hiddenNobleCardIds = [],
+  isShuffling = false,
   nobles,
   validTargets = [],
   selectedNobleTargetId,
@@ -32,6 +36,8 @@ export function NobleLine({
   onReorderDraftChange,
   onSelectNobleTarget,
 }: NobleLineProps) {
+  const cardRefs = useRef(new Map<CardInstanceId, HTMLDivElement>());
+  const previousRectsRef = useRef(new Map<CardInstanceId, DOMRect>());
   const [dragState, setDragState] = useState<{
     currentX: number;
     instanceId: CardInstanceId;
@@ -49,6 +55,7 @@ export function NobleLine({
     : [];
   const reorderIds = reorderDraftIds && reorderDraftIds.length > 0 ? reorderDraftIds : legalReorderIds;
   const reorderTargetIds = new Set(reorderIds);
+  const hiddenNobleIds = new Set(hiddenNobleCardIds);
   const simpleNobleTargetById = new Map(
     validTargets.flatMap((target) =>
       !isReorderMode &&
@@ -69,13 +76,48 @@ export function NobleLine({
       .map((target) => ("instanceId" in target.target ? target.target.instanceId : "")),
   );
 
+  useLayoutEffect(() => {
+    const nextRects = new Map<CardInstanceId, DOMRect>();
+
+    cardRefs.current.forEach((element, instanceId) => {
+      const nextRect = element.getBoundingClientRect();
+      const previousRect = previousRectsRef.current.get(instanceId);
+      nextRects.set(instanceId, nextRect);
+
+      if (!previousRect || dragState?.instanceId === instanceId) {
+        return;
+      }
+
+      const x = previousRect.left - nextRect.left;
+      // Only animate horizontal line movement. Vertical differences can come from
+      // nearby UI panels opening/closing and make the whole line appear to jump.
+      const y = 0;
+
+      if (Math.abs(x) > 1) {
+        element.getAnimations().forEach((animation) => animation.cancel());
+        element.animate(
+          [
+            { transform: `translate(${x}px, ${y}px)` },
+            { transform: "translate(0, 0)" },
+          ],
+          {
+            duration: 260,
+            easing: "cubic-bezier(0.2, 0, 0.2, 1)",
+          },
+        );
+      }
+    });
+
+    previousRectsRef.current = nextRects;
+  }, [nobles, dragState?.instanceId]);
+
   return (
     <Card>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Noble Line</h2>
         <span className="text-sm text-stone-600">Front noble is on the left</span>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-12">
+      <div className={`mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-12 ${isShuffling ? "animate-[lineShuffle_700ms_ease-in-out]" : ""}`}>
         {nobles.map((noble, index) => {
           const position = index + 1;
           const isMovementTarget = movementTargetIds.has(noble.instanceId);
@@ -84,6 +126,7 @@ export function NobleLine({
           const landingTarget = landingByPosition.get(position);
           const isSelectedMovementTarget = selectedNobleTargetId === noble.instanceId;
           const isDragged = dragState?.instanceId === noble.instanceId;
+          const isHiddenForFlight = hiddenNobleIds.has(noble.instanceId);
           const currentDragIndex = dragState ? reorderIds.indexOf(dragState.instanceId) : -1;
           const dragDelta = dragState ? dragState.currentX - dragState.startX : 0;
           const swapThreshold = dragState ? dragState.slotWidth * 0.75 : 0;
@@ -97,13 +140,29 @@ export function NobleLine({
               : 0;
           const isValidTarget = highlightedNobleIds.has(noble.instanceId) || isMovementTarget || Boolean(landingTarget) || isReorderTarget || Boolean(simpleNobleTarget);
           const colorStyle = isValidTarget ? selectedNobleColorStyle : getNobleColorStyle(noble.card.colorCategory);
+          const transform = isDragged && clampedDragDelta ? `translateX(${clampedDragDelta}px)` : undefined;
+          const hasActiveSelectionMode = validTargets.length > 0 || Boolean(selectedActionEffectKey);
+          const canPreviewDirectly = !hasActiveSelectionMode && !isHiddenForFlight;
 
           return (
             <div
-              className={`min-h-28 rounded-md border p-2 transition-colors ${
+              className={`min-h-28 rounded-md border p-2 ${
+                isReorderMode
+                  ? "transition-[background-color,border-color,box-shadow] duration-200"
+                  : "transition-[background-color,border-color,box-shadow,transform] duration-200 hover:scale-125 hover:z-30"
+              } ${
                 isReorderTarget ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
-              } ${colorStyle}`}
+              } ${isHiddenForFlight ? "pointer-events-none opacity-0" : ""} ${colorStyle}`}
+              data-noble-card-id={noble.instanceId}
+              data-noble-line-card="true"
               key={noble.instanceId}
+              ref={(element) => {
+                if (element) {
+                  cardRefs.current.set(noble.instanceId, element);
+                } else {
+                  cardRefs.current.delete(noble.instanceId);
+                }
+              }}
               onPointerCancel={() => setDragState(undefined)}
               onPointerDown={(event) => {
                 if (!isReorderTarget) {
@@ -168,20 +227,20 @@ export function NobleLine({
                 setDragState(undefined);
                 }}
               style={{
-                transform: isDragged ? `translateX(${clampedDragDelta}px)` : undefined,
+                transform,
                 zIndex: isDragged ? 20 : undefined,
               }}
             >
-              <div className="text-[10px] font-semibold uppercase text-stone-500">Pos {position}</div>
+              <div className="text-[10px] font-semibold uppercase text-stone-500">{position}</div>
               <button
                 className={`mt-1 block w-full rounded-md text-left transition ${
-                  isMovementTarget || landingTarget || simpleNobleTarget || isReorderTarget
+                  isMovementTarget || landingTarget || simpleNobleTarget || isReorderTarget || canPreviewDirectly
                     ? isReorderTarget
                       ? "cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-amber-500"
                       : "cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500"
                     : "cursor-default"
                 }`}
-                disabled={!isMovementTarget && !landingTarget && !simpleNobleTarget && !isReorderTarget}
+                disabled={!isMovementTarget && !landingTarget && !simpleNobleTarget && !isReorderTarget && !canPreviewDirectly}
                 onClick={() => {
                   if (isReorderTarget) {
                     return;
@@ -199,6 +258,11 @@ export function NobleLine({
 
                   if (isMovementTarget) {
                     onSelectNobleTarget?.(noble.instanceId);
+                    return;
+                  }
+
+                  if (canPreviewDirectly) {
+                    onPreviewCard?.(noble.card);
                   }
                 }}
                 type="button"
@@ -227,15 +291,6 @@ export function NobleLine({
                   type="button"
                 >
                   Move here
-                </button>
-              ) : null}
-              {!isMovementTarget && !landingTarget && !simpleNobleTarget && !isReorderTarget ? (
-                <button
-                  className="mt-2 text-xs font-semibold text-stone-500 hover:text-stone-900"
-                  onClick={() => onPreviewCard?.(noble.card)}
-                  type="button"
-                >
-                  Preview
                 </button>
               ) : null}
             </div>

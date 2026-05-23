@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { CardImage } from "@/components/ui/CardImage";
@@ -12,17 +12,20 @@ type ActionHandProps = {
   canPlayActions: boolean;
   player?: Player;
   selectedActionCardId?: CardInstanceId;
+  selectedPrivateTargetPlayerId?: PlayerId;
   reorderDraftIds?: CardInstanceId[];
   validTargets: ValidActionTarget[];
   canPlayActionCard: (card: CardInstance<ActionCard>) => boolean;
   getActionBlockedReason: (card: CardInstance<ActionCard>) => string | undefined;
   onSelectAction: (cardId: CardInstanceId) => void;
   onClearSelection: () => void;
-  onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
+  onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void | Promise<void>;
   onReloadTestHand: () => void;
   onPreviewCard?: (card: BaseCard) => void;
+  canEndTurn: boolean;
   canTakeNoble: boolean;
   currentPlayerId?: PlayerId;
+  onEndTurn: (playerId: PlayerId) => void;
   onTakeNoble: (playerId: PlayerId) => void;
 };
 
@@ -30,6 +33,7 @@ export function ActionHand({
   canPlayActions,
   player,
   selectedActionCardId,
+  selectedPrivateTargetPlayerId,
   reorderDraftIds = [],
   validTargets,
   canPlayActionCard,
@@ -39,14 +43,16 @@ export function ActionHand({
   onPlayAction,
   onReloadTestHand,
   onPreviewCard,
+  canEndTurn,
   canTakeNoble,
   currentPlayerId,
+  onEndTurn,
   onTakeNoble,
 }: ActionHandProps) {
   const selectedAction = player?.hand.find((action) => action.instanceId === selectedActionCardId);
-  const [selectedPrivateTargetPlayerId, setSelectedPrivateTargetPlayerId] = useState<string | undefined>();
   const isOpinionatedGuards = selectedAction?.card.effectKey === "opinionatedGuards";
   const isLateArrival = selectedAction?.card.effectKey === "lateArrival";
+  const isRatBreak = selectedAction?.card.effectKey === "ratBreak";
   const isTwistOfFate = selectedAction?.card.effectKey === "twistOfFate";
   const isPrivateHandSelection = selectedAction?.card.effectKey === "lackOfSupport";
   const isCollectedNobleSelection = selectedAction?.card.effectKey === "clericalError";
@@ -56,12 +62,6 @@ export function ActionHand({
   );
   const isPlayerSelection = validTargets.some((target) => target.target.type === "player");
 
-  useEffect(() => {
-    if (!isPrivateHandSelection) {
-      setSelectedPrivateTargetPlayerId(undefined);
-    }
-  }, [isPrivateHandSelection, selectedActionCardId]);
-
   return (
     <Card>
       <div className="flex items-center justify-between gap-3">
@@ -69,16 +69,30 @@ export function ActionHand({
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-sm text-stone-600">{canPlayActions ? "May play one action" : "Action already played"}</span>
           <Button disabled={!player} onClick={onReloadTestHand}>
-            Load Test Hand
+            Reload Test Hand
           </Button>
-          <Button disabled={!canTakeNoble || !currentPlayerId} onClick={() => currentPlayerId && onTakeNoble(currentPlayerId)}>
-            Take Front Noble
+          <Button
+            disabled={(!canTakeNoble && !canEndTurn) || !currentPlayerId}
+            onClick={() => {
+              if (!currentPlayerId) {
+                return;
+              }
+
+              if (canEndTurn) {
+                onEndTurn(currentPlayerId);
+                return;
+              }
+
+              onTakeNoble(currentPlayerId);
+            }}
+          >
+            {canEndTurn ? "End Turn" : "Take Front Noble"}
           </Button>
         </div>
       </div>
 
       {selectedAction ? (
-        <div className="mt-3 rounded-md border border-amber-400 bg-amber-50 p-3">
+        <div className="mt-3 rounded-md border border-amber-400 bg-amber-50/45 p-3 backdrop-blur-sm">
           <h3 className="font-semibold">Choose target for {selectedAction.card.name}</h3>
           <p className="mt-1 text-sm text-stone-700">Only legal targets are shown.</p>
           {isOpinionatedGuards ? (
@@ -132,6 +146,12 @@ export function ActionHand({
             </div>
           ) : isTwistOfFate ? (
             <p className="mt-3 text-sm text-stone-700">Select a card in the Cards In Front panel, then confirm the discard.</p>
+          ) : isRatBreak ? (
+            <RatBreakDiscardPicker
+              validTargets={validTargets}
+              onPlay={(target) => onPlayAction(selectedAction.instanceId, target)}
+              onPreviewCard={onPreviewCard}
+            />
           ) : isLineMovementSelection ? (
             <p className="mt-3 text-sm text-stone-700">
               Choose a highlighted noble in the noble line, then choose one of the highlighted landing spots.
@@ -144,12 +164,11 @@ export function ActionHand({
             <PrivateHandTargetPicker
               selectedPlayerId={selectedPrivateTargetPlayerId}
               validTargets={validTargets}
-              onSelectPlayer={setSelectedPrivateTargetPlayerId}
               onPlay={(target) => onPlayAction(selectedAction.instanceId, target)}
               onPreviewCard={onPreviewCard}
             />
           ) : isCollectedNobleSelection ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-3 flex flex-wrap gap-2">
               {validTargets.map((target) => {
                 const noble = target.target.type === "collected-noble" ? target.revealedNoble : undefined;
 
@@ -158,12 +177,12 @@ export function ActionHand({
                 }
 
                 return (
-                  <div className={`rounded-md border p-2 ${getNobleColorStyle(noble.card.colorCategory)}`} key={`${target.playerId}-${noble.instanceId}`}>
+                  <div className={`w-24 rounded-md border p-1.5 ${getNobleColorStyle(noble.card.colorCategory)}`} key={`${target.playerId}-${noble.instanceId}`}>
                     <p className="text-xs font-semibold text-stone-600">{target.playerName}</p>
                     <CardImage
                       alt={noble.card.name}
                       className="mt-1 cursor-pointer"
-                      imageClassName="aspect-[5/7] border border-stone-200"
+                      imageClassName="aspect-[5/7] border border-stone-200 shadow-sm"
                       imagePath={noble.card.imagePath}
                       onClick={() => onPreviewCard?.(noble.card)}
                     >
@@ -172,11 +191,7 @@ export function ActionHand({
                         <p className="mt-1 text-xs text-stone-700">{getNoblePointText(noble)} pts</p>
                       </div>
                     </CardImage>
-                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-                      <span className="truncate font-semibold">{noble.card.name}</span>
-                      <span className="shrink-0">{getNoblePointText(noble)} pts</span>
-                    </div>
-                    <Button className="mt-3 w-full" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
+                    <Button className="mt-2 w-full px-2 py-1 text-xs" onClick={() => onPlayAction(selectedAction.instanceId, target.target)}>
                       Select
                     </Button>
                   </div>
@@ -205,7 +220,7 @@ export function ActionHand({
 
           return (
             <div
-              className={`rounded-md border p-2 ${isSelected ? "border-amber-600 bg-amber-100" : "border-amber-300 bg-amber-50"}`}
+              className={`rounded-md border p-2 transition-transform duration-200 hover:z-20 hover:scale-[1.125] ${isSelected ? "border-amber-600 bg-amber-100/50" : "border-amber-300 bg-amber-50/45"}`}
               key={action.instanceId}
             >
               <CardImage
@@ -240,15 +255,113 @@ export function ActionHand({
 type PrivateHandTargetPickerProps = {
   selectedPlayerId?: string;
   validTargets: ValidActionTarget[];
-  onSelectPlayer: (playerId: string) => void;
   onPlay: (target: ActionTarget) => void;
   onPreviewCard?: (card: BaseCard) => void;
 };
 
+type RatBreakDiscardPickerProps = {
+  validTargets: ValidActionTarget[];
+  onPlay: (target: ActionTarget) => void;
+  onPreviewCard?: (card: BaseCard) => void;
+};
+
+function RatBreakDiscardPicker({ validTargets, onPlay, onPreviewCard }: RatBreakDiscardPickerProps) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | undefined>();
+  const [selectedTarget, setSelectedTarget] = useState<ValidActionTarget | undefined>();
+  const actionTargets = validTargets.filter((target) => target.target.type === "action-discard-card" && target.revealedAction);
+  const cardWidth = 96;
+  const cardOverlap = cardWidth / 2;
+  const cardStep = cardWidth - cardOverlap;
+  const spreadOffset = cardOverlap + 8;
+  const stackWidth = actionTargets.length > 0 ? cardWidth + (actionTargets.length - 1) * cardStep : 0;
+
+  if (actionTargets.length === 0) {
+    return <p className="mt-3 text-sm text-stone-600">No action cards are in the discard pile.</p>;
+  }
+
+  return (
+    <div className="mt-3 overflow-x-auto pb-3">
+      <div
+        className="relative min-h-40"
+        onMouseLeave={() => setHoveredIndex(undefined)}
+        style={{
+          width: Math.max(stackWidth + spreadOffset, cardWidth),
+        }}
+      >
+        {actionTargets.map((target, index) => {
+          const action = target.revealedAction;
+
+          if (!action) {
+            return null;
+          }
+
+          const shiftForHover =
+            hoveredIndex !== undefined && index < hoveredIndex
+              ? -spreadOffset
+              : 0;
+          const isSelected = selectedTarget?.target.type === "action-discard-card" && selectedTarget.target.instanceId === action.instanceId;
+
+          return (
+            <div
+              className="absolute top-0"
+              key={action.instanceId}
+              onMouseEnter={() => setHoveredIndex(index)}
+              style={{
+                height: 144,
+                left: index * cardStep,
+                width: cardStep,
+                zIndex: actionTargets.length - index,
+              }}
+            >
+              <div
+                className="transition-transform duration-200 ease-out"
+                style={{
+                  transform: `translateX(${shiftForHover}px)`,
+                  width: cardWidth,
+                }}
+              >
+                <button
+                  className={`block w-full rounded-md border bg-amber-50/50 p-1 text-left shadow-md transition hover:border-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                    isSelected ? "border-amber-700 ring-2 ring-amber-500" : "border-amber-300"
+                  }`}
+                  onClick={() => setSelectedTarget(target)}
+                  type="button"
+                >
+                  <CardImage
+                    alt={action.card.name}
+                    className="cursor-pointer"
+                    imageClassName="aspect-[5/7] border border-amber-200 shadow-sm"
+                    imagePath={action.card.imagePath}
+                  >
+                    <div className="min-h-28 rounded-md bg-white/60 p-2">
+                      <h4 className="text-sm font-semibold leading-tight">{action.card.name}</h4>
+                      <p className="mt-1 text-xs text-stone-700">{action.card.description}</p>
+                    </div>
+                  </CardImage>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button disabled={!selectedTarget} onClick={() => selectedTarget && onPlay(selectedTarget.target)}>
+          {selectedTarget?.revealedAction ? `Confirm ${selectedTarget.revealedAction.card.name}` : "Confirm Selection"}
+        </Button>
+        {selectedTarget?.revealedAction ? (
+          <Button onClick={() => onPreviewCard?.(selectedTarget.revealedAction?.card as BaseCard)}>
+            Preview
+          </Button>
+        ) : null}
+        <p className="text-xs text-stone-600">Click a discard-pile card to select it, then confirm. Hover to spread the stack.</p>
+      </div>
+    </div>
+  );
+}
+
 function PrivateHandTargetPicker({
   selectedPlayerId,
   validTargets,
-  onSelectPlayer,
   onPlay,
   onPreviewCard,
 }: PrivateHandTargetPickerProps) {
@@ -264,21 +377,17 @@ function PrivateHandTargetPicker({
   return (
     <div className="mt-3 flex flex-col gap-3">
       {selectedPlayerId ? (
-        <p className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-stone-800">
+        <p className="rounded-md border border-amber-300 bg-white/40 px-3 py-2 text-sm font-medium text-stone-800 backdrop-blur-sm">
           Inspecting {playerTargets.find((target) => target.playerId === selectedPlayerId)?.playerName ?? "selected player"}'s hand.
         </p>
       ) : (
-        <div className="flex flex-wrap gap-2">
-          {playerTargets.map((target) => (
-            <Button key={target.playerId} onClick={() => onSelectPlayer(target.playerId)}>
-              {target.playerName}
-            </Button>
-          ))}
-        </div>
+        <p className="rounded-md border border-amber-300 bg-white/40 px-3 py-2 text-sm font-medium text-stone-800 backdrop-blur-sm">
+          Choose an opponent from the Players panel to inspect their hand.
+        </p>
       )}
 
       {selectedPlayerId ? (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex flex-wrap gap-1">
           {selectedPlayerTargets.map((target) => {
             const action = target.target.type === "action-hand-card" ? target.revealedAction : undefined;
 
@@ -287,11 +396,11 @@ function PrivateHandTargetPicker({
             }
 
             return (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3" key={`${target.playerId}-${action.instanceId}`}>
+              <div className="w-24 rounded-md border border-amber-300 bg-amber-50/45 p-1.5 backdrop-blur-sm" key={`${target.playerId}-${action.instanceId}`}>
                 <CardImage
                   alt={action.card.name}
                   className="cursor-pointer"
-                  imageClassName="aspect-[5/7] border border-amber-200"
+                  imageClassName="aspect-[5/7] border border-amber-200 shadow-sm"
                   imagePath={action.card.imagePath}
                   onClick={() => onPreviewCard?.(action.card)}
                 >
@@ -300,8 +409,7 @@ function PrivateHandTargetPicker({
                     <p className="mt-1 text-xs text-stone-700">{action.card.description}</p>
                   </div>
                 </CardImage>
-                <h4 className="mt-2 font-semibold leading-tight">{action.card.name}</h4>
-                <Button className="mt-3 w-full" onClick={() => onPlay(target.target)}>
+                <Button className="mt-2 w-full px-2 py-1 text-xs" onClick={() => onPlay(target.target)}>
                   Discard
                 </Button>
               </div>

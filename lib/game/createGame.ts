@@ -26,6 +26,10 @@ export function createInitialGameState(): GameState {
     turnEffects: {
       endDayAfterTurn: false,
     },
+    turnSummary: {
+      nobleNames: [],
+      pointDelta: 0,
+    },
     pendingChoice: undefined,
     returningFromPrivateChoice: false,
     notice: undefined,
@@ -41,6 +45,8 @@ export function createInitialGameState(): GameState {
       cards: [],
     },
     log: [],
+    detailedLog: [],
+    playerBriefings: {},
     gameHistory: [],
     winnerIds: [],
   };
@@ -86,6 +92,14 @@ export function createLocalGameState(playerNames: string[]): GameState {
         day: 1,
       },
     ],
+    detailedLog: [
+      {
+        id: "detail-game-started",
+        message: `Started a local game for ${cleanedNames.length} players.`,
+        day: 1,
+      },
+    ],
+    playerBriefings: Object.fromEntries(players.map((player) => [player.id, []])),
   };
 }
 

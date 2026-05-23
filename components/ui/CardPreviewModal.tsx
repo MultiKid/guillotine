@@ -18,7 +18,7 @@ export function CardPreviewModal({ card, onClose }: CardPreviewModalProps) {
       <div className="max-h-[92vh] w-full max-w-sm" onClick={(event) => event.stopPropagation()}>
         <button
           aria-label="Close card preview"
-          className="mb-2 w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-900 shadow-sm hover:bg-stone-50"
+          className="mb-2 w-full rounded-md border border-stone-300 bg-white/50 px-3 py-2 text-sm font-medium text-stone-900 shadow-sm backdrop-blur-sm hover:bg-stone-50/65"
           onClick={onClose}
           type="button"
         >
@@ -26,11 +26,11 @@ export function CardPreviewModal({ card, onClose }: CardPreviewModalProps) {
         </button>
         <CardImage
           alt={card.name}
-          className="rounded-lg bg-white p-2 shadow-2xl"
+          className="rounded-lg bg-white/55 p-2 shadow-2xl backdrop-blur-sm"
           imageClassName="max-h-[82vh] object-contain"
           imagePath={card.imagePath}
         >
-          <div className="rounded-md border border-stone-300 bg-white p-6 text-center">
+          <div className="rounded-md border border-stone-300 bg-white/50 p-6 text-center backdrop-blur-sm">
             <h2 className="text-xl font-bold text-stone-950">{card.name}</h2>
             {card.description ? <p className="mt-3 text-sm text-stone-700">{card.description}</p> : null}
           </div>
