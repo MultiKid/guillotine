@@ -25,12 +25,21 @@ import {
 } from "@/lib/game/effects";
 import type { ValidActionTarget } from "@/lib/game/effects";
 import { gameReducer } from "@/lib/game/gameReducer";
+import { getGameModeConfig } from "@/lib/game/modes";
+import { createPlayerGameView } from "@/lib/game/playerView";
 import { selectCurrentPlayer } from "@/lib/game/selectors";
 import type { ActionCard, ActionTarget, BaseCard, CardInstance, CardInstanceId, NobleCard, Player } from "@/lib/game/types";
+import type { GameMode } from "@/lib/game/modes";
 
 const COLLECTED_STACK_OFFSET = 43;
 
-export function GameBoard() {
+type GameBoardProps = {
+  mode?: GameMode;
+  onBackToHome?: () => void;
+};
+
+export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
+  const modeConfig = getGameModeConfig(mode);
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
   const enterKeyArmed = useRef(true);
   const [selectedActionCardId, setSelectedActionCardId] = useState<CardInstanceId | undefined>();
@@ -59,6 +68,9 @@ export function GameBoard() {
   const [selectedDetailsPlayerId, setSelectedDetailsPlayerId] = useState<string | undefined>();
   const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
   const currentPlayer = selectCurrentPlayer(state);
+  const viewerPlayerId = mode === "local" ? undefined : currentPlayer?.id;
+  const playerGameView = viewerPlayerId ? createPlayerGameView(state, viewerPlayerId) : undefined;
+  const playerPanelPlayers = playerGameView?.players ?? state.players;
   const detailsPlayer = state.players.find((player) => player.id === selectedDetailsPlayerId);
   const pendingClownChoiceForCurrentPlayer =
     state.pendingChoice?.type === "clownGift" &&
@@ -465,6 +477,8 @@ export function GameBoard() {
   if (state.phase === "setup") {
     return (
       <LocalGameSetup
+        modeConfig={modeConfig}
+        onBackToHome={onBackToHome}
         onStartGame={(playerNames) => {
           setDisplayedBackgroundNobleCount(12);
           dispatch({ type: "START_GAME", playerNames });
@@ -549,7 +563,7 @@ export function GameBoard() {
           </div>
         </div>
         <PlayerPanel
-          players={state.players}
+          players={playerPanelPlayers}
           currentPlayerId={currentPlayer?.id}
           playerTargets={
             pendingClownChoiceForCurrentPlayer

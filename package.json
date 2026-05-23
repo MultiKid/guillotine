@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server/index.mjs",
     "build": "next build",
-    "start": "next start",
+    "start": "node server/index.mjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
@@ -16,6 +16,8 @@
     "next": "^14.2.0",
     "react": "^18",
     "react-dom": "^18",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "typescript": "^5"
   },
   "devDependencies": {
