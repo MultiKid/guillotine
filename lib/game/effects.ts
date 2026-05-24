@@ -286,7 +286,6 @@ const lineAlteringActionEffects = new Set<ActionEffectKey>([
   "massConfusion",
   "militaryMight",
   "millingInLine",
-  "missed",
   "moveBackNobleForwardOne",
   "moveFrontNobleBackOne",
   "opinionatedGuards",
@@ -627,10 +626,10 @@ function createMissingHeadsEffect(): ActionEffectDefinition {
   return {
     label: "Choose a player to lose a random collected noble",
     requiresTarget: true,
-    canApply: (state) => state.players.some((player) => player.collectedNobles.length > 0),
-    getValidTargets: (state) =>
+    canApply: (state, context) => state.players.some((player) => player.id !== context.playerId && player.collectedNobles.length > 0),
+    getValidTargets: (state, context) =>
       state.players
-        .filter((player) => player.collectedNobles.length > 0)
+        .filter((player) => player.id !== context.playerId && player.collectedNobles.length > 0)
         .map((player) => ({
           target: {
             type: "player" as const,
@@ -833,7 +832,9 @@ function applyMoveTarget(
   return {
     state: withNobleLine(state, cards),
     applied: true,
-    message: `moved ${noble.card.name} from position ${fromIndex + 1} to ${toIndex + 1}`,
+    message: `moved ${noble.card.name} from position ${fromIndex + 1} to ${toIndex + 1}${
+      config.allowsAnotherAction ? " and may play another action this turn" : ""
+    }`,
     allowsAnotherAction: config.allowsAnotherAction,
   };
 }

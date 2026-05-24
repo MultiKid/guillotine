@@ -284,15 +284,7 @@ export function NobleLine({
               {simpleNobleTarget ? <p className="mt-2 text-xs font-semibold text-amber-800">Choose noble</p> : null}
               {isReorderTarget ? <p className="mt-2 text-xs font-semibold text-amber-800">Drag horizontally</p> : null}
               {isSelectedMovementTarget ? <p className="mt-2 text-xs font-semibold text-amber-800">Selected</p> : null}
-              {landingTarget ? (
-                <button
-                  className="mt-2 w-full rounded-md border border-amber-500 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-200"
-                  onClick={() => onPlayTarget?.(landingTarget.target)}
-                  type="button"
-                >
-                  Move here
-                </button>
-              ) : null}
+              {landingTarget ? <p className="mt-2 text-xs font-semibold text-amber-800">Move here</p> : null}
             </div>
           );
         })}

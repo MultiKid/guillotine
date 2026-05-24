@@ -9,6 +9,7 @@ import type { MouseEvent } from "react";
 type CollectedNobleStacksProps = {
   nobles: CardInstance<NobleCard>[];
   cardWidth?: number;
+  hiddenNobleIds?: CardInstanceId[];
   maxCardsPerStack?: number;
   offset?: number;
   ownerPlayerId?: string;
@@ -39,6 +40,7 @@ const nobleColorLabels: Record<NobleColorCategory, string> = {
 export function CollectedNobleStacks({
   nobles,
   cardWidth = 112,
+  hiddenNobleIds = [],
   maxCardsPerStack,
   offset = 43,
   ownerPlayerId,
@@ -73,7 +75,9 @@ export function CollectedNobleStacks({
                 offset={offset}
                 renderCard={(noble) => (
                   <div
-                    className={`rounded-md border p-1 text-left shadow-sm ${getNobleColorStyle(noble.card.colorCategory)}`}
+                    className={`rounded-md border p-1 text-left shadow-sm ${
+                      hiddenNobleIds.includes(noble.instanceId) ? "pointer-events-none opacity-0" : ""
+                    } ${getNobleColorStyle(noble.card.colorCategory)}`}
                     data-collected-noble-id={noble.instanceId}
                   >
                     <CardImage

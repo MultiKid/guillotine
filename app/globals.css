@@ -44,6 +44,8 @@
 :root {
   color-scheme: light;
   --game-background-image: url("/backgrounds/day-cycle/day-12.png");
+  --game-background-next-image: url("/backgrounds/day-cycle/day-12.png");
+  --game-background-next-opacity: 0;
 }
 
 * {
@@ -55,7 +57,30 @@ body {
 }
 
 .game-page-background {
+  isolation: isolate;
+  position: relative;
+}
+
+.game-page-background::before,
+.game-page-background::after {
   background:
     linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 248, 232, 0.17)),
     var(--game-background-image) center / cover fixed;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+}
+
+.game-page-background::before {
+  z-index: -2;
+}
+
+.game-page-background::after {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 248, 232, 0.17)),
+    var(--game-background-next-image) center / cover fixed;
+  opacity: var(--game-background-next-opacity);
+  transition: opacity 1400ms ease-in-out;
+  z-index: -1;
 }

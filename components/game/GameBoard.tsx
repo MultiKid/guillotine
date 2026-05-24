@@ -25,12 +25,21 @@ import {
 } from "@/lib/game/effects";
 import type { ValidActionTarget } from "@/lib/game/effects";
 import { gameReducer } from "@/lib/game/gameReducer";
+import { getGameModeConfig } from "@/lib/game/modes";
+import { createPlayerGameView } from "@/lib/game/playerView";
 import { selectCurrentPlayer } from "@/lib/game/selectors";
 import type { ActionCard, ActionTarget, BaseCard, CardInstance, CardInstanceId, NobleCard, Player } from "@/lib/game/types";
+import type { GameMode } from "@/lib/game/modes";
 
 const COLLECTED_STACK_OFFSET = 43;
 
-export function GameBoard() {
+type GameBoardProps = {
+  mode?: GameMode;
+  onBackToHome?: () => void;
+};
+
+export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
+  const modeConfig = getGameModeConfig(mode);
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialGameState);
   const enterKeyArmed = useRef(true);
   const [selectedActionCardId, setSelectedActionCardId] = useState<CardInstanceId | undefined>();
@@ -59,6 +68,9 @@ export function GameBoard() {
   const [selectedDetailsPlayerId, setSelectedDetailsPlayerId] = useState<string | undefined>();
   const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
   const currentPlayer = selectCurrentPlayer(state);
+  const viewerPlayerId = mode === "local" ? undefined : currentPlayer?.id;
+  const playerGameView = viewerPlayerId ? createPlayerGameView(state, viewerPlayerId) : undefined;
+  const playerPanelPlayers = playerGameView?.players ?? state.players;
   const detailsPlayer = state.players.find((player) => player.id === selectedDetailsPlayerId);
   const pendingClownChoiceForCurrentPlayer =
     state.pendingChoice?.type === "clownGift" &&
@@ -240,7 +252,12 @@ export function GameBoard() {
       return;
     }
 
-    const frontNoble = state.nobleLine.cards[0];
+    const shouldCommitReorderBeforeTaking =
+      isReorderAction && selectedAction && reorderDraftIds.length > 0 && state.turnStep === "playActionOptional";
+    const effectiveNobleLine = shouldCommitReorderBeforeTaking
+      ? applyReorderDraft(state.nobleLine.cards, reorderDraftIds)
+      : state.nobleLine.cards;
+    const frontNoble = effectiveNobleLine[0];
     const player = state.players.find((candidate) => candidate.id === playerId);
 
     if (!frontNoble || !player) {
@@ -252,7 +269,7 @@ export function GameBoard() {
     let preShuffledLineIds: CardInstanceId[] | undefined;
 
     if (player.shuffleLineBeforeNextCollection) {
-      preShuffledLineIds = shuffleIds(state.nobleLine.cards.map((noble) => noble.instanceId));
+      preShuffledLineIds = shuffleIds(effectiveNobleLine.map((noble) => noble.instanceId));
       setShufflePreviewIds(preShuffledLineIds);
       setIsLineShuffling(true);
       await wait(720);
@@ -260,11 +277,11 @@ export function GameBoard() {
     }
 
     const visibleFrontNoble = preShuffledLineIds
-      ? state.nobleLine.cards.find((noble) => noble.instanceId === preShuffledLineIds[0])
+      ? effectiveNobleLine.find((noble) => noble.instanceId === preShuffledLineIds[0])
       : frontNoble;
     const visibleSecondNoble = preShuffledLineIds
-      ? state.nobleLine.cards.find((noble) => noble.instanceId === preShuffledLineIds[1])
-      : state.nobleLine.cards[1];
+      ? effectiveNobleLine.find((noble) => noble.instanceId === preShuffledLineIds[1])
+      : effectiveNobleLine[1];
 
     if (visibleFrontNoble) {
       await animateNobleToCollection(visibleFrontNoble, player);
@@ -274,7 +291,17 @@ export function GameBoard() {
       await animateNobleToCollection(visibleSecondNoble, player, [visibleFrontNoble]);
     }
 
-    dispatch({ type: "TAKE_FRONT_NOBLE", playerId, preShuffledLineIds });
+    if (shouldCommitReorderBeforeTaking) {
+      dispatch({
+        type: "CONFIRM_REORDER_AND_TAKE_FRONT_NOBLE",
+        playerId,
+        cardId: selectedAction.instanceId,
+        reorderedNobleIds: reorderDraftIds,
+        preShuffledLineIds,
+      });
+    } else {
+      dispatch({ type: "TAKE_FRONT_NOBLE", playerId, preShuffledLineIds });
+    }
     setShufflePreviewIds([]);
     setHiddenNobleLineCardIds([]);
     setSelectedActionCardId(undefined);
@@ -465,6 +492,8 @@ export function GameBoard() {
   if (state.phase === "setup") {
     return (
       <LocalGameSetup
+        modeConfig={modeConfig}
+        onBackToHome={onBackToHome}
         onStartGame={(playerNames) => {
           setDisplayedBackgroundNobleCount(12);
           dispatch({ type: "START_GAME", playerNames });
@@ -549,7 +578,7 @@ export function GameBoard() {
           </div>
         </div>
         <PlayerPanel
-          players={state.players}
+          players={playerPanelPlayers}
           currentPlayerId={currentPlayer?.id}
           playerTargets={
             pendingClownChoiceForCurrentPlayer
@@ -621,7 +650,6 @@ export function GameBoard() {
             setReorderDraftIds([]);
           }}
           onPlayAction={playAction}
-          onReloadTestHand={reloadTestHand}
           onPreviewCard={setPreviewCard}
           selectedPrivateTargetPlayerId={selectedPrivateTargetPlayerId}
           canEndTurn={canUseEnterToEndTurn}

@@ -223,6 +223,13 @@ export type GameCommand =
       cardId: CardInstanceId;
       target?: ActionTarget;
     }
+  | {
+      type: "CONFIRM_REORDER_AND_TAKE_FRONT_NOBLE";
+      playerId: PlayerId;
+      cardId: CardInstanceId;
+      reorderedNobleIds: CardInstanceId[];
+      preShuffledLineIds?: CardInstanceId[];
+    }
   | { type: "TAKE_FRONT_NOBLE"; playerId: PlayerId; preShuffledLineIds?: CardInstanceId[] }
   | { type: "END_TURN"; playerId: PlayerId }
   | { type: "START_NEXT_DAY" }

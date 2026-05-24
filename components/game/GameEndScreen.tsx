@@ -1,11 +1,17 @@
-import type { Player, PlayerId } from "@/lib/game/types";
+import type { PlayerId } from "@/lib/game/types";
+
+type GameEndPlayer = {
+  id: PlayerId;
+  name: string;
+  score: number;
+};
 
 type GameEndScreenProps = {
-  players: Player[];
+  players: GameEndPlayer[];
   winnerIds: PlayerId[];
 };
 
-type RankedPlayer = Player & {
+type RankedPlayer = GameEndPlayer & {
   rank: number;
 };
 
@@ -85,7 +91,7 @@ export function GameEndScreen({ players, winnerIds }: GameEndScreenProps) {
   );
 }
 
-function getRankedPlayers(players: Player[]): RankedPlayer[] {
+function getRankedPlayers(players: GameEndPlayer[]): RankedPlayer[] {
   const sortedPlayers = [...players].sort((first, second) => second.score - first.score || first.name.localeCompare(second.name));
   let previousScore: number | undefined;
   let previousRank = 0;

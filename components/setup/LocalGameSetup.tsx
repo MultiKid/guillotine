@@ -4,12 +4,15 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@/lib/game/constants";
+import type { GameModeConfig } from "@/lib/game/modes";
 
 type LocalGameSetupProps = {
+  modeConfig?: GameModeConfig;
+  onBackToHome?: () => void;
   onStartGame: (playerNames: string[]) => void;
 };
 
-export function LocalGameSetup({ onStartGame }: LocalGameSetupProps) {
+export function LocalGameSetup({ modeConfig, onBackToHome, onStartGame }: LocalGameSetupProps) {
   const [playerNames, setPlayerNames] = useState(["Player 1", "Player 2"]);
   const cleanedNames = playerNames.map((name) => name.trim()).filter(Boolean);
   const canStart = cleanedNames.length >= MIN_PLAYERS && cleanedNames.length <= MAX_PLAYERS;
@@ -40,8 +43,19 @@ export function LocalGameSetup({ onStartGame }: LocalGameSetupProps) {
     <Card>
       <div className="flex flex-col gap-4">
         <div>
-          <h2 className="text-lg font-semibold">Local Game Setup</h2>
-          <p className="text-sm text-stone-600">Enter 2-5 players for one-computer pass-and-play.</p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">{modeConfig?.setupTitle ?? "Local Game Setup"}</h2>
+              <p className="text-sm text-stone-600">
+                {modeConfig?.setupDescription ?? "Enter 2-5 players for one-computer pass-and-play."}
+              </p>
+            </div>
+            {modeConfig ? (
+              <span className="rounded-full bg-amber-100/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-950">
+                {modeConfig.badge}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -67,11 +81,12 @@ export function LocalGameSetup({ onStartGame }: LocalGameSetupProps) {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {onBackToHome ? <Button onClick={onBackToHome}>Back</Button> : null}
           <Button disabled={playerNames.length >= MAX_PLAYERS} onClick={addPlayer}>
             Add Player
           </Button>
           <Button disabled={!canStart} onClick={() => onStartGame(cleanedNames)}>
-            Start Local Game
+            Start Game
           </Button>
         </div>
       </div>

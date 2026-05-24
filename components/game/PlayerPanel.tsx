@@ -1,9 +1,19 @@
 import { Card } from "@/components/ui/Card";
 import type { ValidActionTarget } from "@/lib/game/effects";
-import type { ActionTarget, Player, PlayerId } from "@/lib/game/types";
+import type { ActionCard, ActionTarget, CardInstance, NobleCard, PlayerId } from "@/lib/game/types";
+
+export type PlayerPanelPlayer = {
+  id: PlayerId;
+  name: string;
+  score: number;
+  hand?: CardInstance<ActionCard>[];
+  handCount?: number;
+  collectedNobles: CardInstance<NobleCard>[];
+  inFrontActions: CardInstance<ActionCard>[];
+};
 
 type PlayerPanelProps = {
-  players: Player[];
+  players: PlayerPanelPlayer[];
   currentPlayerId?: PlayerId;
   playerTargets?: ValidActionTarget[];
   onSelectPlayer?: (playerId: PlayerId) => void;
@@ -61,7 +71,7 @@ export function PlayerPanel({
                 <span className="text-sm font-semibold">{player.score} pts</span>
               </div>
               <p className="mt-1 text-xs text-stone-600">
-                {player.hand.length} hand, {player.collectedNobles.length} nobles, {player.inFrontActions.length} in front
+                {getPlayerHandCount(player)} hand, {player.collectedNobles.length} nobles, {player.inFrontActions.length} in front
               </p>
             </button>
           );
@@ -69,4 +79,8 @@ export function PlayerPanel({
       </div>
     </Card>
   );
+}
+
+function getPlayerHandCount(player: PlayerPanelPlayer): number {
+  return player.handCount ?? player.hand?.length ?? 0;
 }

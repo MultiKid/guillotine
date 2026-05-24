@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "tsc -p tsconfig.server.json && node server/run-compiled.cjs",
+    "build": "next build && tsc -p tsconfig.server.json",
+    "start": "node server/run-compiled.cjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
@@ -16,6 +16,8 @@
     "next": "^14.2.0",
     "react": "^18",
     "react-dom": "^18",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "typescript": "^5"
   },
   "devDependencies": {

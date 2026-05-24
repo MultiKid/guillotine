@@ -49,6 +49,16 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
       return undoLastAction(state);
     case "PLAY_ACTION_CARD":
       return state.passScreen.visible ? state : playActionCard(state, command.playerId, command.cardId, command.target);
+    case "CONFIRM_REORDER_AND_TAKE_FRONT_NOBLE":
+      return state.passScreen.visible
+        ? state
+        : confirmReorderAndTakeFrontNoble(
+            state,
+            command.playerId,
+            command.cardId,
+            command.reorderedNobleIds,
+            command.preShuffledLineIds,
+          );
     case "TAKE_FRONT_NOBLE":
       return state.passScreen.visible ? state : takeFrontNoble(state, command.playerId, command.preShuffledLineIds);
     case "END_TURN":
@@ -372,19 +382,13 @@ function transferCollectedNobleInReducer(
 }
 
 function discardCallousGuards(state: GameState, playerId: PlayerId, cardId: CardInstanceId): GameState {
-  const currentPlayer = state.players[state.currentPlayerIndex];
+  const player = state.players.find((candidate) => candidate.id === playerId);
 
-  if (
-    state.phase !== "playing" ||
-    state.turnStep !== "playActionOptional" ||
-    !currentPlayer ||
-    currentPlayer.id !== playerId ||
-    currentPlayer.skipActionThisTurn
-  ) {
+  if (state.phase !== "playing" || !player) {
     return state;
   }
 
-  const callousGuards = currentPlayer.inFrontActions.find(
+  const callousGuards = player.inFrontActions.find(
     (action) => action.instanceId === cardId && action.card.effectKey === "callousGuards",
   );
 
@@ -392,7 +396,7 @@ function discardCallousGuards(state: GameState, playerId: PlayerId, cardId: Card
     return state;
   }
 
-  const historyState = pushGameHistory(state, `${currentPlayer.name} discarded Callous Guards.`);
+  const historyState = pushGameHistory(state, `${player.name} discarded Callous Guards.`);
 
   return {
     ...historyState,
@@ -415,13 +419,13 @@ function discardCallousGuards(state: GameState, playerId: PlayerId, cardId: Card
       ...historyState.actionDeck,
       discardPile: [callousGuards, ...historyState.actionDeck.discardPile],
     },
-    turnStep: "takeNobleRequired",
+    turnStep: historyState.turnStep,
     log: [
-      createLogEntry(historyState, `${currentPlayer.name} discarded Callous Guards.`, playerId),
+      createLogEntry(historyState, `${player.name} discarded Callous Guards.`, playerId),
       ...historyState.log,
     ],
     detailedLog: [
-      createDetailedLogEntry(historyState, `${currentPlayer.name} discarded Callous Guards.`, playerId),
+      createDetailedLogEntry(historyState, `${player.name} discarded Callous Guards.`, playerId),
       ...historyState.detailedLog,
     ],
   };
@@ -646,6 +650,25 @@ function playActionCard(
     ...stateAfterActionTriggers,
     turnStep: result.allowsAnotherAction ? "playActionOptional" : "takeNobleRequired",
   };
+}
+
+function confirmReorderAndTakeFrontNoble(
+  state: GameState,
+  playerId: PlayerId,
+  cardId: CardInstanceId,
+  reorderedNobleIds: CardInstanceId[],
+  preShuffledLineIds?: CardInstanceId[],
+): GameState {
+  const stateAfterReorder = playActionCard(state, playerId, cardId, {
+    type: "reorder-nobles",
+    instanceIds: reorderedNobleIds,
+  });
+
+  if (stateAfterReorder === state) {
+    return state;
+  }
+
+  return takeFrontNoble(stateAfterReorder, playerId, preShuffledLineIds);
 }
 
 function takeFrontNoble(state: GameState, playerId: PlayerId, preShuffledLineIds?: CardInstanceId[]): GameState {
