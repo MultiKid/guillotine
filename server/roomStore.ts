@@ -1,16 +1,35 @@
 import { randomUUID } from "node:crypto";
+import type { GameState } from "@/lib/game/types";
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ROOM_CODE_LENGTH = 5;
 
-export function createRoomStore() {
-  const rooms = new Map();
-  const playerRoomBySocketId = new Map();
+export type RoomStatus = "lobby" | "started";
 
-  function createRoom({ playerName, socketId }) {
+export type RoomPlayer = {
+  id: string;
+  name: string;
+  socketId?: string;
+  isConnected: boolean;
+};
+
+export type Room = {
+  roomCode: string;
+  players: RoomPlayer[];
+  hostPlayerId: string;
+  status: RoomStatus;
+  gameState?: GameState;
+  createdAt: number;
+};
+
+export function createRoomStore() {
+  const rooms = new Map<string, Room>();
+  const playerRoomBySocketId = new Map<string, string>();
+
+  function createRoom({ playerName, socketId }: { playerName: string; socketId: string }) {
     const roomCode = createUniqueRoomCode(rooms);
-    const hostPlayer = createPlayer({ name: playerName, socketId, isHost: true });
-    const room = {
+    const hostPlayer = createPlayer({ name: playerName, socketId });
+    const room: Room = {
       roomCode,
       players: [hostPlayer],
       hostPlayerId: hostPlayer.id,
@@ -25,7 +44,7 @@ export function createRoomStore() {
     return { room, playerId: hostPlayer.id };
   }
 
-  function joinRoom({ roomCode, playerName, socketId }) {
+  function joinRoom({ roomCode, playerName, socketId }: { roomCode: string; playerName: string; socketId: string }) {
     const normalizedRoomCode = normalizeRoomCode(roomCode);
     const room = rooms.get(normalizedRoomCode);
 
@@ -41,14 +60,38 @@ export function createRoomStore() {
       return { error: "That room is full." };
     }
 
-    const player = createPlayer({ name: playerName, socketId, isHost: false });
+    const player = createPlayer({ name: playerName, socketId });
     room.players.push(player);
     playerRoomBySocketId.set(socketId, room.roomCode);
 
     return { room, playerId: player.id };
   }
 
-  function startRoom({ roomCode, playerId, createGameState }) {
+  function quickJoinRoom({ playerName, socketId }: { playerName: string; socketId: string }) {
+    const waitingRoom = Array.from(rooms.values())
+      .filter((room) => room.status === "lobby" && room.players.length < 5)
+      .sort((firstRoom, secondRoom) => firstRoom.createdAt - secondRoom.createdAt)[0];
+
+    if (!waitingRoom) {
+      return createRoom({ playerName, socketId });
+    }
+
+    const player = createPlayer({ name: playerName, socketId });
+    waitingRoom.players.push(player);
+    playerRoomBySocketId.set(socketId, waitingRoom.roomCode);
+
+    return { room: waitingRoom, playerId: player.id };
+  }
+
+  function startRoom({
+    roomCode,
+    playerId,
+    createGameState,
+  }: {
+    roomCode: string;
+    playerId: string;
+    createGameState: (players: RoomPlayer[]) => GameState;
+  }) {
     const room = rooms.get(normalizeRoomCode(roomCode));
 
     if (!room) {
@@ -69,18 +112,18 @@ export function createRoomStore() {
     return { room };
   }
 
-  function disconnectSocket(socketId) {
+  function disconnectSocket(socketId: string): Room | undefined {
     const roomCode = playerRoomBySocketId.get(socketId);
 
     if (!roomCode) {
-      return;
+      return undefined;
     }
 
     playerRoomBySocketId.delete(socketId);
     const room = rooms.get(roomCode);
 
     if (!room) {
-      return;
+      return undefined;
     }
 
     const player = room.players.find((candidate) => candidate.socketId === socketId);
@@ -92,14 +135,13 @@ export function createRoomStore() {
 
     if (room.players.every((candidate) => !candidate.isConnected)) {
       rooms.delete(roomCode);
-      return;
+      return undefined;
     }
 
     if (player?.id === room.hostPlayerId) {
       const nextHost = room.players.find((candidate) => candidate.isConnected);
 
       if (nextHost) {
-        nextHost.isHost = true;
         room.hostPlayerId = nextHost.id;
       }
     }
@@ -107,7 +149,7 @@ export function createRoomStore() {
     return room;
   }
 
-  function getRoom(roomCode) {
+  function getRoom(roomCode: string) {
     return rooms.get(normalizeRoomCode(roomCode));
   }
 
@@ -116,11 +158,12 @@ export function createRoomStore() {
     disconnectSocket,
     getRoom,
     joinRoom,
+    quickJoinRoom,
     startRoom,
   };
 }
 
-export function toRoomSnapshot(room) {
+export function toRoomSnapshot(room: Room) {
   return {
     roomCode: room.roomCode,
     hostPlayerId: room.hostPlayerId,
@@ -134,17 +177,16 @@ export function toRoomSnapshot(room) {
   };
 }
 
-function createPlayer({ name, socketId, isHost }) {
+function createPlayer({ name, socketId }: { name: string; socketId: string }): RoomPlayer {
   return {
     id: randomUUID(),
     name: sanitizePlayerName(name),
     socketId,
-    isHost,
     isConnected: true,
   };
 }
 
-function createUniqueRoomCode(rooms) {
+function createUniqueRoomCode(rooms: Map<string, Room>) {
   let roomCode = createRoomCode();
 
   while (rooms.has(roomCode)) {
@@ -164,11 +206,11 @@ function createRoomCode() {
   return roomCode;
 }
 
-function normalizeRoomCode(roomCode) {
+function normalizeRoomCode(roomCode: string) {
   return String(roomCode ?? "").trim().toUpperCase();
 }
 
-function sanitizePlayerName(playerName) {
+function sanitizePlayerName(playerName: string) {
   const cleanedName = String(playerName ?? "").trim();
   return cleanedName.length > 0 ? cleanedName.slice(0, 24) : "Player";
 }

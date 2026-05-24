@@ -1,4 +1,4 @@
-export type GameMode = "local" | "online" | "hostPhones";
+export type GameMode = "local" | "online";
 
 export type GameModeConfig = {
   id: GameMode;
@@ -15,7 +15,7 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
     title: "Local Mode",
     buttonLabel: "Play Local",
     setupTitle: "Local Game Setup",
-    setupDescription: "Existing one-computer pass-and-play mode. Works offline and keeps the pass screen.",
+    setupDescription: "One-computer pass-and-play mode. Works offline and keeps the pass screen.",
     badge: "Offline pass-and-play",
   },
   {
@@ -23,16 +23,8 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
     title: "Online Mode",
     buttonLabel: "Play Online",
     setupTitle: "Online Game Setup",
-    setupDescription: "Future private multiplayer mode. For now, this runs the same local gameplay duplicate.",
+    setupDescription: "Private online rooms for friends or family playing on separate devices.",
     badge: "Future server-owned game",
-  },
-  {
-    id: "hostPhones",
-    title: "Host Screen + Phones",
-    buttonLabel: "Host Screen + Phones",
-    setupTitle: "Host Screen Setup",
-    setupDescription: "Future public display with phones as private controllers. For now, this runs local gameplay.",
-    badge: "Future shared-screen mode",
   },
 ];
 

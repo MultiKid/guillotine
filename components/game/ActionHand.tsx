@@ -20,7 +20,6 @@ type ActionHandProps = {
   onSelectAction: (cardId: CardInstanceId) => void;
   onClearSelection: () => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void | Promise<void>;
-  onReloadTestHand: () => void;
   onPreviewCard?: (card: BaseCard) => void;
   canEndTurn: boolean;
   canTakeNoble: boolean;
@@ -41,7 +40,6 @@ export function ActionHand({
   onSelectAction,
   onClearSelection,
   onPlayAction,
-  onReloadTestHand,
   onPreviewCard,
   canEndTurn,
   canTakeNoble,
@@ -68,9 +66,6 @@ export function ActionHand({
         <h2 className="text-lg font-semibold">{player ? `${player.name}'s Hand` : "Action Hand"}</h2>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-sm text-stone-600">{canPlayActions ? "May play one action" : "Action already played"}</span>
-          <Button disabled={!player} onClick={onReloadTestHand}>
-            Reload Test Hand
-          </Button>
           <Button
             disabled={(!canTakeNoble && !canEndTurn) || !currentPlayerId}
             onClick={() => {

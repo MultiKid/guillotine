@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server/index.mjs",
-    "build": "next build",
-    "start": "node server/index.mjs",
+    "dev": "tsc -p tsconfig.server.json && node server/run-compiled.cjs",
+    "build": "next build && tsc -p tsconfig.server.json",
+    "start": "node server/run-compiled.cjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },

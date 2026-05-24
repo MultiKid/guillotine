@@ -252,7 +252,12 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
       return;
     }
 
-    const frontNoble = state.nobleLine.cards[0];
+    const shouldCommitReorderBeforeTaking =
+      isReorderAction && selectedAction && reorderDraftIds.length > 0 && state.turnStep === "playActionOptional";
+    const effectiveNobleLine = shouldCommitReorderBeforeTaking
+      ? applyReorderDraft(state.nobleLine.cards, reorderDraftIds)
+      : state.nobleLine.cards;
+    const frontNoble = effectiveNobleLine[0];
     const player = state.players.find((candidate) => candidate.id === playerId);
 
     if (!frontNoble || !player) {
@@ -264,7 +269,7 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
     let preShuffledLineIds: CardInstanceId[] | undefined;
 
     if (player.shuffleLineBeforeNextCollection) {
-      preShuffledLineIds = shuffleIds(state.nobleLine.cards.map((noble) => noble.instanceId));
+      preShuffledLineIds = shuffleIds(effectiveNobleLine.map((noble) => noble.instanceId));
       setShufflePreviewIds(preShuffledLineIds);
       setIsLineShuffling(true);
       await wait(720);
@@ -272,11 +277,11 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
     }
 
     const visibleFrontNoble = preShuffledLineIds
-      ? state.nobleLine.cards.find((noble) => noble.instanceId === preShuffledLineIds[0])
+      ? effectiveNobleLine.find((noble) => noble.instanceId === preShuffledLineIds[0])
       : frontNoble;
     const visibleSecondNoble = preShuffledLineIds
-      ? state.nobleLine.cards.find((noble) => noble.instanceId === preShuffledLineIds[1])
-      : state.nobleLine.cards[1];
+      ? effectiveNobleLine.find((noble) => noble.instanceId === preShuffledLineIds[1])
+      : effectiveNobleLine[1];
 
     if (visibleFrontNoble) {
       await animateNobleToCollection(visibleFrontNoble, player);
@@ -286,7 +291,17 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
       await animateNobleToCollection(visibleSecondNoble, player, [visibleFrontNoble]);
     }
 
-    dispatch({ type: "TAKE_FRONT_NOBLE", playerId, preShuffledLineIds });
+    if (shouldCommitReorderBeforeTaking) {
+      dispatch({
+        type: "CONFIRM_REORDER_AND_TAKE_FRONT_NOBLE",
+        playerId,
+        cardId: selectedAction.instanceId,
+        reorderedNobleIds: reorderDraftIds,
+        preShuffledLineIds,
+      });
+    } else {
+      dispatch({ type: "TAKE_FRONT_NOBLE", playerId, preShuffledLineIds });
+    }
     setShufflePreviewIds([]);
     setHiddenNobleLineCardIds([]);
     setSelectedActionCardId(undefined);
@@ -635,7 +650,6 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
             setReorderDraftIds([]);
           }}
           onPlayAction={playAction}
-          onReloadTestHand={reloadTestHand}
           onPreviewCard={setPreviewCard}
           selectedPrivateTargetPlayerId={selectedPrivateTargetPlayerId}
           canEndTurn={canUseEnterToEndTurn}

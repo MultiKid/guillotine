@@ -15,11 +15,11 @@ export function GameModeHome({ onSelectMode }: GameModeHomeProps) {
         <div>
           <h2 className="text-xl font-bold">Choose Game Mode</h2>
           <p className="mt-1 text-sm text-stone-700">
-            Online and host-screen modes are scaffolded as local gameplay for now, ready to split apart later.
+            Play on one computer or start an online room for separate devices.
           </p>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {GAME_MODE_CONFIGS.map((mode) => (
             <button
               className="flex min-h-44 flex-col justify-between rounded-lg border border-stone-300 bg-white/35 p-4 text-left shadow-sm backdrop-blur-sm transition hover:-translate-y-0.5 hover:bg-white/55 focus:outline-none focus:ring-2 focus:ring-amber-500"
