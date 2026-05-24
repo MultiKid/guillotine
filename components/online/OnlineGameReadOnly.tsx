@@ -78,6 +78,7 @@ export function OnlineGameReadOnly({
   const displayedBackgroundNobleCountRef = useRef(clampBackgroundNobleCount(view.nobleLine.length || 12));
   const previousBackgroundTurnRef = useRef<{ currentPlayerId?: string; turnStep: string } | undefined>(undefined);
   const backgroundTransitionTimeoutRef = useRef<number | undefined>(undefined);
+  const enterKeyIsDownRef = useRef(false);
   const currentPlayer = view.players.find((player) => player.id === view.currentPlayerId);
   const selectedDetailsPlayer = view.players.find((player) => player.id === selectedDetailsPlayerId);
   const currentTurnActivity = view.isViewerTurn ? [] : getCurrentTurnActivity(view);
@@ -134,6 +135,31 @@ export function OnlineGameReadOnly({
     () => selectedActionTargets.filter((target) => target.target.type === "in-front-action"),
     [selectedActionTargets],
   );
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Enter" || enterKeyIsDownRef.current || event.repeat || isEditableElement(event.target)) {
+        return;
+      }
+
+      enterKeyIsDownRef.current = true;
+      void handleEnterShortcut();
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key === "Enter") {
+        enterKeyIsDownRef.current = false;
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  });
 
   useLayoutEffect(() => {
     setSelectedHandTargetPlayerId(undefined);
@@ -273,6 +299,67 @@ export function OnlineGameReadOnly({
 
   if (view.phase === "gameEnd") {
     return <GameEndScreen players={view.players} winnerIds={view.winnerIds} />;
+  }
+
+  function handleEnterShortcut() {
+    if (roomAlert || previewCard || selectedDetailsPlayerId || isBusy || view.phase !== "playing" || view.pendingChoice) {
+      return;
+    }
+
+    const singleTarget = getSingleEnterActionTarget();
+
+    if (selectedAction && singleTarget && canPlayAction) {
+      onPlayAction(selectedAction.instanceId, singleTarget);
+      setSelectedActionId(undefined);
+      setSelectedHandTargetPlayerId(undefined);
+      setSelectedNobleTargetId(undefined);
+      return;
+    }
+
+    if (canEndTurn) {
+      onEndTurn();
+      return;
+    }
+
+    if (canTakeFrontNoble) {
+      takeFrontNobleFromControls();
+    }
+  }
+
+  function getSingleEnterActionTarget(): ActionTarget | undefined {
+    if (!selectedAction || isReorderAction) {
+      return undefined;
+    }
+
+    if (movementTargets.length > 0) {
+      const targetsForSelectedNoble = selectedNobleTargetId
+        ? movementTargets.filter((target) => getTargetNobleId(target.target) === selectedNobleTargetId)
+        : movementTargets;
+
+      return targetsForSelectedNoble.length === 1 ? targetsForSelectedNoble[0]?.target : undefined;
+    }
+
+    if (selectedHandTargetPlayerId) {
+      const handTargets = handTargetChoicesByPlayerId.get(selectedHandTargetPlayerId) ?? [];
+      return handTargets.length === 1 ? handTargets[0]?.target : undefined;
+    }
+
+    return selectedActionTargets.length === 1 ? selectedActionTargets[0]?.target : undefined;
+  }
+
+  function takeFrontNobleFromControls() {
+    if (isReorderAction && selectedAction && reorderDraftIds.length > 0) {
+      onTakeFrontNoble({
+        cardId: selectedAction.instanceId,
+        reorderedNobleIds: reorderDraftIds,
+      });
+      setSelectedActionId(undefined);
+      setSelectedNobleTargetId(undefined);
+      setReorderDraftIds([]);
+      return;
+    }
+
+    onTakeFrontNoble();
   }
 
   return (
@@ -559,19 +646,7 @@ export function OnlineGameReadOnly({
               onClick={
                 canEndTurn
                   ? onEndTurn
-                  : () => {
-                      if (isReorderAction && selectedAction && reorderDraftIds.length > 0) {
-                        onTakeFrontNoble({
-                          cardId: selectedAction.instanceId,
-                          reorderedNobleIds: reorderDraftIds,
-                        });
-                        setSelectedActionId(undefined);
-                        setReorderDraftIds([]);
-                        return;
-                      }
-
-                      onTakeFrontNoble();
-                    }
+                  : takeFrontNobleFromControls
               }
               type="button"
             >
@@ -1953,4 +2028,17 @@ function transitionGameBackground(nobleCount: number, timeoutRef: MutableRefObje
     document.documentElement.style.setProperty("--game-background-next-opacity", "0");
     timeoutRef.current = undefined;
   }, 1500);
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    target.isContentEditable
+  );
 }
