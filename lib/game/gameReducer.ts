@@ -20,7 +20,13 @@ import type {
   GameState,
   Player,
   PlayerId,
+  TurnStep,
 } from "@/lib/game/types";
+
+type EndCurrentDayOptions = {
+  nextTurnStep?: TurnStep;
+  showPassScreen?: boolean;
+};
 
 export function gameReducer(state: GameState, command: GameCommand): GameState {
   switch (command.type) {
@@ -635,21 +641,24 @@ function playActionCard(
   };
   const stateAfterActionTriggers = updateTurnSummaryFromPlayerDelta(state, stateAfterActionTriggersWithoutSummary, playerId);
 
-  if (stateAfterActionTriggers.nobleLine.cards.length === 0 && !stateAfterActionTriggers.pendingChoice && !result.skipEmptyLineDayEnd) {
-    return endCurrentDay(stateAfterActionTriggers, "The noble line is empty.");
-  }
-
-  if (result.endsTurn) {
-    return {
-      ...stateAfterActionTriggers,
-      turnStep: "turnComplete",
-    };
-  }
-
-  return {
+  const nextTurnStep: TurnStep = result.endsTurn
+    ? "turnComplete"
+    : result.allowsAnotherAction
+      ? "playActionOptional"
+      : "takeNobleRequired";
+  const stateWithNextTurnStep: GameState = {
     ...stateAfterActionTriggers,
-    turnStep: result.allowsAnotherAction ? "playActionOptional" : "takeNobleRequired",
+    turnStep: nextTurnStep,
   };
+
+  if (stateWithNextTurnStep.nobleLine.cards.length === 0 && !stateWithNextTurnStep.pendingChoice && !result.skipEmptyLineDayEnd) {
+    return endCurrentDay(stateWithNextTurnStep, "The noble line is empty.", {
+      nextTurnStep,
+      showPassScreen: false,
+    });
+  }
+
+  return stateWithNextTurnStep;
 }
 
 function confirmReorderAndTakeFrontNoble(
@@ -754,7 +763,16 @@ function takeFrontNoble(state: GameState, playerId: PlayerId, preShuffledLineIds
     ],
   };
 
-  return updateTurnSummaryFromPlayerDelta(state, nextState, playerId);
+  const summarizedState = updateTurnSummaryFromPlayerDelta(state, nextState, playerId);
+
+  if (summarizedState.nobleLine.cards.length === 0 && !summarizedState.pendingChoice) {
+    return endCurrentDay(summarizedState, `Day ${summarizedState.day} ended because the noble line is empty.`, {
+      nextTurnStep: "turnComplete",
+      showPassScreen: false,
+    });
+  }
+
+  return summarizedState;
 }
 
 function endTurn(state: GameState, playerId: PlayerId): GameState {
@@ -837,9 +855,10 @@ function applyPreShuffledBeforeNobleCollection(
   };
 }
 
-function endCurrentDay(state: GameState, reason: string): GameState {
+function endCurrentDay(state: GameState, reason: string, options: EndCurrentDayOptions = {}): GameState {
   const discardedNobles = state.nobleLine.cards;
   const nextDay = state.day + 1;
+  const nextTurnStep = options.nextTurnStep ?? "playActionOptional";
   const dayEndMessage = `${reason} Discarded ${discardedNobles.length} noble${discardedNobles.length === 1 ? "" : "s"} from the line.`;
   const baseLog = [
     createLogEntry(state, dayEndMessage),
@@ -888,11 +907,11 @@ function endCurrentDay(state: GameState, reason: string): GameState {
     });
   }
 
-  return showPassScreen({
+  const nextState: GameState = {
     ...state,
     day: nextDay,
     phase: "playing",
-    turnStep: "playActionOptional",
+    turnStep: nextTurnStep,
     turnEffects: {
       endDayAfterTurn: false,
     },
@@ -909,7 +928,9 @@ function endCurrentDay(state: GameState, reason: string): GameState {
     log: baseLog,
     detailedLog: baseDetailedLog,
     winnerIds: [],
-  });
+  };
+
+  return options.showPassScreen === false ? nextState : showPassScreen(nextState);
 }
 
 function showPassScreen(state: GameState): GameState {

@@ -37,7 +37,7 @@ const implementedActions: Record<string, { effectKey: ActionEffectKey; descripti
   },
   "Political Influence": {
     effectKey: "politicalInfluence",
-    description: "Draw 3 extra action cards without taking a noble this turn.",
+    description: "Draw 3 extra action cards without taking a noble this turn. In this prototype, draw 4 total including the normal end-of-turn draw.",
   },
   "Double Feature": {
     effectKey: "doubleFeature",

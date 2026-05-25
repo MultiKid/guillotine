@@ -62,7 +62,7 @@ export function PassTurnScreen({ briefingItems = [], canStartTurn = true, nextPl
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [canStartTurn, isLeaving]);
+  }, [briefingItems.length, canStartTurn, isLeaving, isShowingBriefing]);
 
   function beginReadyTransition(inputMethod: "keyboard" | "pointer" = "pointer") {
     if (isLeaving || !canStartTurn) {

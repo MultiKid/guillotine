@@ -173,7 +173,6 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         error={error}
         isBusy={isBusy}
         view={gameView}
-        onEndTurn={endTurn}
         onDiscardCallousGuards={discardCallousGuards}
         onPlayAction={playActionCard}
         onResolveClericalErrorReturn={resolveClericalErrorReturn}
@@ -242,7 +241,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
                   <p className="text-sm text-stone-700">{room.players.length}/5 joined</p>
                 </div>
                 <span className="rounded-full bg-amber-100/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-950">
-                  {room.status === "started" ? "Read-only game started" : "Waiting in lobby"}
+                  {room.status === "started" ? "Game started" : "Waiting in lobby"}
                 </span>
               </div>
 
@@ -265,7 +264,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
               {room.status === "started" ? (
                 <div className="mt-4 rounded-md border border-green-300 bg-green-50/60 p-3 text-sm text-green-950">
-                  Server-owned game created. Waiting for your filtered player view.
+                  Server-owned game created. Waiting for your player view.
                 </div>
               ) : null}
 
@@ -273,7 +272,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button disabled={!isHost || isBusy || room.players.length < 2} onClick={startRoom}>
-                  {isBusy ? "Starting..." : "Start Read-Only Game"}
+                  {isBusy ? "Starting..." : "Start Game"}
                 </Button>
                 {!isHost ? <p className="self-center text-sm text-stone-700">Waiting for host to start.</p> : null}
               </div>
@@ -304,36 +303,6 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
         if (!commandResponse?.ok) {
           setError(commandResponse?.error ?? "Could not take the front noble.");
-          setIsBusy(false);
-          return;
-        }
-
-        if (commandResponse.gameView) {
-          setGameView(commandResponse.gameView);
-          setIsBusy(false);
-        }
-      },
-    );
-  }
-
-  function endTurn() {
-    if (!room || !playerId) {
-      return;
-    }
-
-    setIsBusy(true);
-    setError(undefined);
-    socketRef.current?.emit(
-      "game:end-turn",
-      {
-        roomCode: room.roomCode,
-        playerId,
-      },
-      (response) => {
-        const commandResponse = response as { ok?: boolean; error?: string; gameView?: PlayerGameView };
-
-        if (!commandResponse?.ok) {
-          setError(commandResponse?.error ?? "Could not end the turn.");
           setIsBusy(false);
           return;
         }

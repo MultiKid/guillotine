@@ -52,8 +52,9 @@ export function createInitialGameState(): GameState {
   };
 }
 
-export function createLocalGameState(playerNames: string[]): GameState {
+export function createLocalGameState(playerNames: string[], options: { shufflePlayers?: boolean } = {}): GameState {
   const cleanedNames = playerNames.map((name) => name.trim()).filter(Boolean);
+  const orderedNames = options.shufflePlayers === false ? cleanedNames : shuffleItems(cleanedNames);
 
   if (cleanedNames.length < MIN_PLAYERS || cleanedNames.length > MAX_PLAYERS) {
     throw new Error(`Local games require ${MIN_PLAYERS}-${MAX_PLAYERS} players.`);
@@ -63,7 +64,7 @@ export function createLocalGameState(playerNames: string[]): GameState {
 
   const actionDrawPile = shuffleDeck(createCardInstancesFromDefinitions(actionDefinitions));
   const nobleDrawPile = shuffleDeck(createCardInstancesFromDefinitions(nobleDefinitions));
-  const { players, remainingActions } = dealPlayers(cleanedNames, actionDrawPile);
+  const { players, remainingActions } = dealPlayers(orderedNames, actionDrawPile);
   const nobleLineCards = nobleDrawPile.slice(0, NOBLE_LINE_SIZE);
 
   return {
@@ -140,6 +141,17 @@ function dealPlayers(
   });
 
   return { players, remainingActions };
+}
+
+function shuffleItems<TItem>(items: TItem[]): TItem[] {
+  const shuffled = [...items];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  return shuffled;
 }
 
 

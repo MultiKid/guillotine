@@ -4,17 +4,18 @@ import type { GameCommand, GameState, PlayerId } from "@/lib/game/types";
 import type { RoomPlayer } from "./roomStore";
 
 export function createOnlineGameState(roomPlayers: RoomPlayer[]): GameState {
-  const state = createLocalGameState(roomPlayers.map((player) => player.name));
+  const state = createLocalGameState(roomPlayers.map((player) => player.name), { shufflePlayers: false });
   const oldPlayerIds = state.players.map((player) => player.id);
   const playerIdMap = new Map(oldPlayerIds.map((oldPlayerId, index) => [oldPlayerId, roomPlayers[index]?.id ?? oldPlayerId]));
+  const mappedPlayers = state.players.map((player, index) => ({
+    ...player,
+    id: roomPlayers[index]?.id ?? player.id,
+    name: roomPlayers[index]?.name ?? player.name,
+  }));
 
   return {
     ...state,
-    players: state.players.map((player, index) => ({
-      ...player,
-      id: roomPlayers[index]?.id ?? player.id,
-      name: roomPlayers[index]?.name ?? player.name,
-    })),
+    players: shuffleItems(mappedPlayers),
     playerBriefings: Object.fromEntries(
       Object.entries(state.playerBriefings).map(([oldPlayerId, entries]) => [playerIdMap.get(oldPlayerId) ?? oldPlayerId, entries]),
     ),
@@ -44,7 +45,7 @@ export function applyOnlineGameCommand(state: GameState, command: GameCommand): 
     return { state, error: "That command could not be applied." };
   }
 
-  nextState = applyOnlineStartOfTurnEffects(nextState);
+  nextState = settleOnlineTurnFlow(nextState);
 
   if (nextState.passScreen.visible) {
     nextState = {
@@ -260,6 +261,47 @@ function applyOnlineStartOfTurnEffects(state: GameState): GameState {
   };
 }
 
+function settleOnlineTurnFlow(state: GameState): GameState {
+  let nextState = state;
+
+  for (let guard = 0; guard < 4; guard += 1) {
+    const beforeState = nextState;
+    nextState = applyOnlineStartOfTurnEffects(nextState);
+    nextState = advanceCompletedOnlineTurn(nextState);
+    nextState = applyOnlineStartOfTurnEffects(nextState);
+
+    if (nextState === beforeState || nextState.turnStep !== "turnComplete" || nextState.pendingChoice) {
+      return nextState;
+    }
+  }
+
+  return nextState;
+}
+
+function advanceCompletedOnlineTurn(state: GameState): GameState {
+  const currentPlayer = getCurrentPlayer(state);
+
+  if (state.phase !== "playing" || state.turnStep !== "turnComplete" || state.pendingChoice || !currentPlayer) {
+    return state;
+  }
+
+  return gameReducer(state, {
+    type: "END_TURN",
+    playerId: currentPlayer.id,
+  });
+}
+
 function remapOptionalPlayerId(playerId: PlayerId | undefined, playerIdMap: Map<PlayerId, PlayerId>) {
   return playerId ? playerIdMap.get(playerId) ?? playerId : undefined;
+}
+
+function shuffleItems<TItem>(items: TItem[]): TItem[] {
+  const shuffled = [...items];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  return shuffled;
 }

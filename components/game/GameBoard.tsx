@@ -173,10 +173,9 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
     const clampedNobleCount = Math.min(Math.max(displayedBackgroundNobleCount, 1), 13);
     const backgroundFileName = `day-${String(clampedNobleCount).padStart(2, "0")}.png`;
 
-    document.documentElement.style.setProperty(
-      "--game-background-image",
-      `url("/backgrounds/day-cycle/${backgroundFileName}")`,
-    );
+    document.documentElement.style.setProperty("--game-background-image", `url("/backgrounds/day-cycle/${backgroundFileName}")`);
+    document.documentElement.style.setProperty("--game-background-next-image", `url("/backgrounds/day-cycle/${backgroundFileName}")`);
+    document.documentElement.style.setProperty("--game-background-next-opacity", "0");
   }, [displayedBackgroundNobleCount]);
 
   async function playAction(cardId: CardInstanceId, target?: ActionTarget) {

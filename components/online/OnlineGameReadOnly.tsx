@@ -18,7 +18,6 @@ import type { OnlineRoomSnapshot } from "@/lib/online/lobbyTypes";
 type OnlineGameReadOnlyProps = {
   error?: string;
   isBusy?: boolean;
-  onEndTurn: () => void;
   onDiscardCallousGuards: (cardId: CardInstanceId) => void;
   onPlayAction: (cardId: CardInstanceId, target?: ActionTarget) => void;
   onResolveClericalErrorReturn: (nobleId?: CardInstanceId) => void;
@@ -53,7 +52,6 @@ type OnlineScorePulseState = {
 export function OnlineGameReadOnly({
   error,
   isBusy = false,
-  onEndTurn,
   onDiscardCallousGuards,
   onPlayAction,
   onResolveClericalErrorReturn,
@@ -76,8 +74,8 @@ export function OnlineGameReadOnly({
   const [flashingAction, setFlashingAction] = useState<OnlineActionFlashState | undefined>();
   const [scorePulse, setScorePulse] = useState<OnlineScorePulseState | undefined>();
   const displayedBackgroundNobleCountRef = useRef(clampBackgroundNobleCount(view.nobleLine.length || 12));
-  const previousBackgroundTurnRef = useRef<{ currentPlayerId?: string; turnStep: string } | undefined>(undefined);
-  const backgroundTransitionTimeoutRef = useRef<number | undefined>(undefined);
+  const previousBackgroundTurnRef = useRef<{ currentPlayerId?: string; day: number; turnStep: string } | undefined>(undefined);
+  const backgroundTransitionTimeoutRef = useRef<number[]>([]);
   const enterKeyIsDownRef = useRef(false);
   const currentPlayer = view.players.find((player) => player.id === view.currentPlayerId);
   const selectedDetailsPlayer = view.players.find((player) => player.id === selectedDetailsPlayerId);
@@ -86,7 +84,6 @@ export function OnlineGameReadOnly({
   const displayedScorePulse = scorePulse ?? pendingScorePulse;
   const canTakeFrontNoble =
     view.phase === "playing" && view.isViewerTurn && view.turnStep !== "turnComplete" && view.nobleLine.length > 0 && !isBusy;
-  const canEndTurn = view.phase === "playing" && view.isViewerTurn && view.turnStep === "turnComplete" && !isBusy;
   const rushJobBlocksViewer = Boolean(view.viewer?.skipActionThisTurn || view.viewer?.skipNextActionTurn);
   const canPlayAction = view.phase === "playing" && view.isViewerTurn && view.turnStep === "playActionOptional" && !rushJobBlocksViewer && !isBusy;
   const selectedAction = view.viewer?.hand.find((action) => action.instanceId === selectedActionId);
@@ -171,11 +168,11 @@ export function OnlineGameReadOnly({
       const image = new Image();
       image.src = `/backgrounds/day-cycle/day-${String(count).padStart(2, "0")}.png`;
     }
+    const nightImage = new Image();
+    nightImage.src = "/backgrounds/day-cycle/day-night.png";
 
     return () => {
-      if (backgroundTransitionTimeoutRef.current) {
-        window.clearTimeout(backgroundTransitionTimeoutRef.current);
-      }
+      clearBackgroundTransitionTimeouts(backgroundTransitionTimeoutRef);
     };
   }, []);
 
@@ -185,7 +182,7 @@ export function OnlineGameReadOnly({
     }
 
     const previousTurn = previousBackgroundTurnRef.current;
-    const currentTurn = { currentPlayerId: view.currentPlayerId, turnStep: view.turnStep };
+    const currentTurn = { currentPlayerId: view.currentPlayerId, day: view.day, turnStep: view.turnStep };
     previousBackgroundTurnRef.current = currentTurn;
 
     if (!previousTurn) {
@@ -197,7 +194,14 @@ export function OnlineGameReadOnly({
     const justAdvancedTurn =
       view.turnStep === "playActionOptional" &&
       (previousTurn.turnStep === "turnComplete" || previousTurn.currentPlayerId !== view.currentPlayerId);
+    const justAdvancedDay = view.day > (previousTurn.day ?? view.day);
     const nextCount = clampBackgroundNobleCount(view.nobleLine.length);
+
+    if (justAdvancedDay) {
+      displayedBackgroundNobleCountRef.current = nextCount;
+      transitionGameBackgroundThroughNight(nextCount, backgroundTransitionTimeoutRef);
+      return;
+    }
 
     if (justAdvancedTurn && nextCount !== displayedBackgroundNobleCountRef.current) {
       displayedBackgroundNobleCountRef.current = nextCount;
@@ -313,11 +317,6 @@ export function OnlineGameReadOnly({
       setSelectedActionId(undefined);
       setSelectedHandTargetPlayerId(undefined);
       setSelectedNobleTargetId(undefined);
-      return;
-    }
-
-    if (canEndTurn) {
-      onEndTurn();
       return;
     }
 
@@ -642,15 +641,11 @@ export function OnlineGameReadOnly({
             </p>
             <button
               className="rounded-md border border-stone-300 bg-white/55 px-3 py-2 text-sm font-semibold text-stone-900 shadow-sm transition hover:bg-white/75 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canTakeFrontNoble && !canEndTurn}
-              onClick={
-                canEndTurn
-                  ? onEndTurn
-                  : takeFrontNobleFromControls
-              }
+              disabled={!canTakeFrontNoble}
+              onClick={takeFrontNobleFromControls}
               type="button"
             >
-              {isBusy ? "Working..." : canEndTurn ? "End Turn" : "Take Front Noble"}
+              {isBusy ? "Working..." : "Take Front Noble"}
             </button>
           </div>
         </div>
@@ -695,6 +690,7 @@ export function OnlineGameReadOnly({
                 choices={actionDiscardTargetChoices}
                 emptyMessage="No action cards are available in the discard pile."
                 isBusy={isBusy}
+                stackedDiscardLayout
                 title="Choose an action card from the discard pile"
                 onChoose={(choice) => {
                   onPlayAction(selectedAction.instanceId, choice.target);
@@ -1674,6 +1670,7 @@ function ActionCardChoicePanel({
   emptyMessage,
   isBusy,
   onChoose,
+  stackedDiscardLayout = false,
   title,
 }: {
   choices: OnlineActionTargetChoice[];
@@ -1681,13 +1678,81 @@ function ActionCardChoicePanel({
   emptyMessage: string;
   isBusy: boolean;
   onChoose: (choice: OnlineActionTargetChoice) => void;
+  stackedDiscardLayout?: boolean;
   title: string;
 }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | undefined>();
+  const cardWidth = 120;
+  const cardOverlap = cardWidth / 2;
+  const cardStep = cardWidth - cardOverlap;
+  const spreadOffset = cardOverlap + 8;
+  const stackWidth = choices.length > 0 ? cardWidth + (choices.length - 1) * cardStep : 0;
+
   return (
     <div className="mt-3">
       <h4 className="text-sm font-semibold">{title}</h4>
       {choices.length === 0 ? (
         <p className="mt-2 text-sm text-stone-700">{emptyMessage}</p>
+      ) : stackedDiscardLayout ? (
+        <div className="mt-2 min-h-48 overflow-x-auto pb-3">
+          <div
+            className="relative min-h-44"
+            onMouseLeave={() => setHoveredIndex(undefined)}
+            style={{
+              width: Math.max(stackWidth + spreadOffset, cardWidth),
+            }}
+          >
+            {choices.map((choice, index) => {
+              const action = choice.revealedAction;
+
+              if (!action) {
+                return null;
+              }
+
+              const shiftForHover = hoveredIndex !== undefined && index < hoveredIndex ? -spreadOffset : 0;
+
+              return (
+                <div
+                  className="absolute top-0"
+                  key={`${action.instanceId}-${choice.label}`}
+                  onMouseEnter={() => setHoveredIndex(index)}
+                  style={{
+                    height: 180,
+                    left: index * cardStep,
+                    width: cardStep,
+                    zIndex: choices.length - index,
+                  }}
+                >
+                  <div
+                    className="transition-transform duration-200 ease-out"
+                    style={{
+                      transform: `translateX(${shiftForHover}px)`,
+                      width: cardWidth,
+                    }}
+                  >
+                    <button
+                      className="block w-full rounded-md border border-amber-300 bg-amber-50/45 p-1 shadow-sm transition hover:border-amber-600 hover:bg-amber-100/60 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={isBusy}
+                      onClick={() => onChoose(choice)}
+                      title={`Select ${action.card.name}`}
+                      type="button"
+                    >
+                      <CardImage
+                        alt={action.card.name}
+                        imageClassName="aspect-[5/7] border border-amber-200 shadow-sm"
+                        imagePath={action.card.imagePath}
+                      >
+                        <div className="min-h-20 rounded-md bg-white/60 p-1">
+                          <h5 className="text-xs font-semibold leading-tight">{action.card.name}</h5>
+                        </div>
+                      </CardImage>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ) : (
         <div className={`mt-2 grid gap-2 ${compact ? "sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8" : "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"}`}>
           {choices.map((choice) => {
@@ -2009,25 +2074,57 @@ function getBackgroundImageValue(nobleCount: number): string {
   return `url("/backgrounds/day-cycle/day-${String(clampBackgroundNobleCount(nobleCount)).padStart(2, "0")}.png")`;
 }
 
+function getNightBackgroundImageValue(): string {
+  return `url("/backgrounds/day-cycle/day-night.png")`;
+}
+
 function setGameBackgroundImage(nobleCount: number) {
   document.documentElement.style.setProperty("--game-background-image", getBackgroundImageValue(nobleCount));
   document.documentElement.style.setProperty("--game-background-next-image", getBackgroundImageValue(nobleCount));
   document.documentElement.style.setProperty("--game-background-next-opacity", "0");
 }
 
-function transitionGameBackground(nobleCount: number, timeoutRef: MutableRefObject<number | undefined>) {
-  if (timeoutRef.current) {
-    window.clearTimeout(timeoutRef.current);
+function transitionGameBackground(nobleCount: number, timeoutRef: MutableRefObject<number[]>) {
+  transitionGameBackgroundTo(getBackgroundImageValue(nobleCount), timeoutRef);
+}
+
+function transitionGameBackgroundThroughNight(nobleCount: number, timeoutRef: MutableRefObject<number[]>) {
+  clearBackgroundTransitionTimeouts(timeoutRef);
+  const sunsetImage = getBackgroundImageValue(1);
+  const nightImage = getNightBackgroundImageValue();
+  const nextDayImage = getBackgroundImageValue(nobleCount);
+
+  transitionGameBackgroundTo(sunsetImage, timeoutRef, false);
+  timeoutRef.current.push(window.setTimeout(() => transitionGameBackgroundTo(nightImage, timeoutRef, false), 1600));
+  timeoutRef.current.push(window.setTimeout(() => transitionGameBackgroundTo(nextDayImage, timeoutRef, false), 3200));
+}
+
+function transitionGameBackgroundTo(backgroundImage: string, timeoutRef: MutableRefObject<number[]>, clearExisting = true) {
+  if (clearExisting) {
+    clearBackgroundTransitionTimeouts(timeoutRef);
   }
 
-  document.documentElement.style.setProperty("--game-background-next-image", getBackgroundImageValue(nobleCount));
+  document.documentElement.style.setProperty("--game-background-next-image", backgroundImage);
   document.documentElement.style.setProperty("--game-background-next-opacity", "1");
 
-  timeoutRef.current = window.setTimeout(() => {
-    document.documentElement.style.setProperty("--game-background-image", getBackgroundImageValue(nobleCount));
-    document.documentElement.style.setProperty("--game-background-next-opacity", "0");
-    timeoutRef.current = undefined;
-  }, 1500);
+  timeoutRef.current.push(window.setTimeout(() => {
+    commitBackgroundTransition(backgroundImage);
+  }, 1500));
+}
+
+function commitBackgroundTransition(backgroundImage: string) {
+  document.documentElement.style.setProperty("--game-background-image", backgroundImage);
+  document.documentElement.style.setProperty("--game-background-next-image", backgroundImage);
+  document.documentElement.style.setProperty("--game-background-transition", "none");
+  document.documentElement.style.setProperty("--game-background-next-opacity", "0");
+  window.requestAnimationFrame(() => {
+    document.documentElement.style.setProperty("--game-background-transition", "opacity 1400ms ease-in-out");
+  });
+}
+
+function clearBackgroundTransitionTimeouts(timeoutRef: MutableRefObject<number[]>) {
+  timeoutRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+  timeoutRef.current = [];
 }
 
 function isEditableElement(target: EventTarget | null): boolean {

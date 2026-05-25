@@ -160,7 +160,7 @@ export const actionEffects: Record<ActionEffectKey, ActionEffectDefinition> = {
   clericalError: createClericalErrorEffect(),
   lackOfSupport: createLackOfSupportEffect(),
   extraCart: createImmediateEffect("Add 3 nobles to the end of the line", addExtraCartNobles),
-  politicalInfluence: createImmediateEffect("Draw 3 action cards and end this turn", drawPoliticalInfluenceCards),
+  politicalInfluence: createImmediateEffect("Draw 4 action cards and end this turn", drawPoliticalInfluenceCards),
   doubleFeature: createImmediateEffect("Take an extra front noble immediately", takeExtraFrontNoble),
   moveFrontNobleBackOne: createImmediateEffect("Move the first noble back one position", (state) => {
     const cards = [...state.nobleLine.cards];
@@ -1798,12 +1798,12 @@ function addExtraCartNobles(state: GameState): ActionEffectResult {
 }
 
 function drawPoliticalInfluenceCards(state: GameState, context: ActionEffectContext): ActionEffectResult {
-  const result = drawActionCards(state, context.playerId, 3);
+  const result = drawActionCards(state, context.playerId, 4);
 
   return {
     ...result,
     endsTurn: result.applied,
-    message: `${result.message} and ended the turn without taking a noble`,
+    message: `${result.message} total and ended the turn without taking a noble`,
   };
 }
 
