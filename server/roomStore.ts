@@ -67,6 +67,29 @@ export function createRoomStore() {
     return { room, playerId: player.id };
   }
 
+  function rejoinRoom({ roomCode, playerName, socketId }: { roomCode: string; playerName: string; socketId: string }) {
+    const room = rooms.get(normalizeRoomCode(roomCode));
+
+    if (!room) {
+      return { error: "Room not found." };
+    }
+
+    const sanitizedName = sanitizePlayerName(playerName);
+    const player = room.players.find(
+      (candidate) => !candidate.isConnected && candidate.name.toLowerCase() === sanitizedName.toLowerCase(),
+    );
+
+    if (!player) {
+      return { error: "No disconnected player with that name was found in this room." };
+    }
+
+    player.socketId = socketId;
+    player.isConnected = true;
+    playerRoomBySocketId.set(socketId, room.roomCode);
+
+    return { room, playerId: player.id };
+  }
+
   function quickJoinRoom({ playerName, socketId }: { playerName: string; socketId: string }) {
     const waitingRoom = Array.from(rooms.values())
       .filter((room) => room.status === "lobby" && room.players.length < 5)
@@ -159,6 +182,7 @@ export function createRoomStore() {
     getRoom,
     joinRoom,
     quickJoinRoom,
+    rejoinRoom,
     startRoom,
   };
 }

@@ -12,6 +12,8 @@ type OnlineLobbyProps = {
   onBackToHome: () => void;
 };
 
+const ONLINE_REJOIN_STORAGE_KEY = "guillotine-online-room";
+
 type SocketClient = {
   disconnect: () => void;
   emit: (eventName: string, payload?: unknown, callback?: (response: unknown) => void) => void;
@@ -24,6 +26,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
   const [socketReady, setSocketReady] = useState(false);
   const [connectionError, setConnectionError] = useState<string | undefined>();
   const [playerName, setPlayerName] = useState("Player");
+  const [roomCodeInput, setRoomCodeInput] = useState("");
   const [room, setRoom] = useState<OnlineRoomSnapshot | undefined>();
   const [playerId, setPlayerId] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -56,6 +59,26 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         socketRef.current = socket;
         setSocketReady(true);
         setConnectionError(undefined);
+        const savedRoom = loadSavedOnlineRoom();
+
+        if (savedRoom) {
+          setPlayerName(savedRoom.playerName);
+          setRoomCodeInput(savedRoom.roomCode);
+          socket.emit(
+            "room:rejoin",
+            {
+              roomCode: savedRoom.roomCode,
+              playerName: savedRoom.playerName,
+            },
+            (response) => {
+              const lobbyResponse = response as LobbyResponse;
+
+              if (lobbyResponse?.ok) {
+                handleLobbyResponse(lobbyResponse);
+              }
+            },
+          );
+        }
 
         socket.on("room:updated", (nextRoom) => {
           const updatedRoom = nextRoom as OnlineRoomSnapshot;
@@ -128,10 +151,16 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
     );
   }, [gameView, playerId, room]);
 
-  function quickJoinRoom() {
+  function createRoom() {
     setIsBusy(true);
     setError(undefined);
-    socketRef.current?.emit("room:quick-join", { playerName }, handleLobbyResponse);
+    socketRef.current?.emit("room:create", { playerName }, handleLobbyResponse);
+  }
+
+  function joinRoom() {
+    setIsBusy(true);
+    setError(undefined);
+    socketRef.current?.emit("room:join", { roomCode: roomCodeInput, playerName }, handleLobbyResponse);
   }
 
   function startRoom() {
@@ -162,6 +191,11 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
     setRoom(lobbyResponse.room);
     setPlayerId(lobbyResponse.playerId);
+    const roomPlayerName = lobbyResponse.room.players.find((player) => player.id === lobbyResponse.playerId)?.name ?? playerName;
+    saveOnlineRoom({
+      roomCode: lobbyResponse.room.roomCode,
+      playerName: roomPlayerName,
+    });
     if (lobbyResponse.gameView) {
       setGameView(lobbyResponse.gameView);
     }
@@ -179,6 +213,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         onResolveClownGift={resolveClownGift}
         onResolveInfighting={resolveInfighting}
         onResolveInnocentVictimDiscard={resolveInnocentVictimDiscard}
+        onReloadTestHand={reloadTestHand}
         onTakeFrontNoble={takeFrontNoble}
         room={room}
         roomAlert={roomAlert}
@@ -191,7 +226,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
           <div>
             <h2 className="text-xl font-bold">Online Lobby</h2>
             <p className="mt-1 text-sm text-stone-700">
-              Quick lobby mode: the first waiting player becomes host, and later players automatically join that room.
+              Create a private room, or enter a room code to join friends and family.
             </p>
           </div>
           <Button onClick={onBackToHome}>Back</Button>
@@ -205,7 +240,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
         {!room ? (
           <div className="grid gap-4">
-            <div className="grid gap-3 rounded-lg border border-stone-300 bg-white/30 p-4 backdrop-blur-sm md:grid-cols-[1fr_auto] md:items-end">
+            <div className="grid gap-3 rounded-lg border border-stone-300 bg-white/30 p-4 backdrop-blur-sm md:grid-cols-[1fr_12rem_auto_auto] md:items-end">
               <label className="grid gap-1 text-sm font-medium text-stone-700">
                 Player Name
                 <input
@@ -215,14 +250,29 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
                   onChange={(event) => setPlayerName(event.target.value)}
                 />
               </label>
+              <label className="grid gap-1 text-sm font-medium text-stone-700">
+                Room Code
+                <input
+                  className="rounded-md border border-stone-300 bg-white/55 px-3 py-2 uppercase tracking-[0.2em] text-stone-950 outline-none focus:border-stone-500"
+                  maxLength={5}
+                  value={roomCodeInput}
+                  onChange={(event) => setRoomCodeInput(event.target.value.toUpperCase())}
+                />
+              </label>
 
               {error ? <p className="text-sm font-medium text-red-800">{error}</p> : null}
 
               <Button
                 disabled={!socketReady || isBusy || playerName.trim().length === 0}
-                onClick={quickJoinRoom}
+                onClick={createRoom}
               >
-                {isBusy ? "Joining..." : "Join Waiting Game"}
+                {isBusy ? "Creating..." : "Create Room"}
+              </Button>
+              <Button
+                disabled={!socketReady || isBusy || playerName.trim().length === 0 || roomCodeInput.trim().length === 0}
+                onClick={joinRoom}
+              >
+                {isBusy ? "Joining..." : "Join Room"}
               </Button>
             </div>
           </div>
@@ -335,6 +385,36 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
         if (!commandResponse?.ok) {
           setError(commandResponse?.error ?? "Could not play that action card.");
+          setIsBusy(false);
+          return;
+        }
+
+        if (commandResponse.gameView) {
+          setGameView(commandResponse.gameView);
+          setIsBusy(false);
+        }
+      },
+    );
+  }
+
+  function reloadTestHand() {
+    if (!room || !playerId) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(undefined);
+    socketRef.current?.emit(
+      "game:reload-test-hand",
+      {
+        roomCode: room.roomCode,
+        playerId,
+      },
+      (response) => {
+        const commandResponse = response as { ok?: boolean; error?: string; gameView?: PlayerGameView };
+
+        if (!commandResponse?.ok) {
+          setError(commandResponse?.error ?? "Could not reload the test hand.");
           setIsBusy(false);
           return;
         }
@@ -500,5 +580,26 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         }
       },
     );
+  }
+}
+
+function loadSavedOnlineRoom(): { roomCode: string; playerName: string } | undefined {
+  try {
+    const rawValue = window.localStorage.getItem(ONLINE_REJOIN_STORAGE_KEY);
+    const parsedValue = rawValue ? JSON.parse(rawValue) as { roomCode?: unknown; playerName?: unknown } : undefined;
+    const roomCode = typeof parsedValue?.roomCode === "string" ? parsedValue.roomCode.trim().toUpperCase() : "";
+    const playerName = typeof parsedValue?.playerName === "string" ? parsedValue.playerName.trim() : "";
+
+    return roomCode && playerName ? { roomCode, playerName } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveOnlineRoom(room: { roomCode: string; playerName: string }) {
+  try {
+    window.localStorage.setItem(ONLINE_REJOIN_STORAGE_KEY, JSON.stringify(room));
+  } catch {
+    // Local storage is best-effort only. Failing to save should not block play.
   }
 }

@@ -24,6 +24,7 @@ type OnlineGameReadOnlyProps = {
   onResolveClownGift: (targetPlayerId: string) => void;
   onResolveInfighting: (cardIds: CardInstanceId[]) => void;
   onResolveInnocentVictimDiscard: (cardId?: CardInstanceId) => void;
+  onReloadTestHand: () => void;
   onTakeFrontNoble: (pendingReorder?: { cardId: CardInstanceId; reorderedNobleIds: CardInstanceId[] }) => void;
   onDismissRoomAlert?: () => void;
   room?: OnlineRoomSnapshot;
@@ -58,6 +59,7 @@ export function OnlineGameReadOnly({
   onResolveClownGift,
   onResolveInfighting,
   onResolveInnocentVictimDiscard,
+  onReloadTestHand,
   onTakeFrontNoble,
   onDismissRoomAlert,
   room,
@@ -77,6 +79,8 @@ export function OnlineGameReadOnly({
   const previousBackgroundTurnRef = useRef<{ currentPlayerId?: string; day: number; turnStep: string } | undefined>(undefined);
   const backgroundTransitionTimeoutRef = useRef<number[]>([]);
   const enterKeyIsDownRef = useRef(false);
+  const testHandChordKeysRef = useRef(new Set<string>());
+  const testHandChordArmedRef = useRef(true);
   const currentPlayer = view.players.find((player) => player.id === view.currentPlayerId);
   const selectedDetailsPlayer = view.players.find((player) => player.id === selectedDetailsPlayerId);
   const currentTurnActivity = view.isViewerTurn ? [] : getCurrentTurnActivity(view);
@@ -135,15 +139,46 @@ export function OnlineGameReadOnly({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Enter" || enterKeyIsDownRef.current || event.repeat || isEditableElement(event.target)) {
+      const key = event.key.toLowerCase();
+
+      if (isEditableElement(event.target)) {
         return;
       }
 
-      enterKeyIsDownRef.current = true;
-      void handleEnterShortcut();
+      if (key === "q" || key === "w" || key === "e") {
+        testHandChordKeysRef.current.add(key);
+
+        if (
+          testHandChordArmedRef.current &&
+          testHandChordKeysRef.current.has("q") &&
+          testHandChordKeysRef.current.has("w") &&
+          testHandChordKeysRef.current.has("e")
+        ) {
+          testHandChordArmedRef.current = false;
+          event.preventDefault();
+          reloadTestHandFromKeyboard();
+        }
+
+        return;
+      }
+
+      if (event.key === "Enter" && !enterKeyIsDownRef.current && !event.repeat) {
+        enterKeyIsDownRef.current = true;
+        void handleEnterShortcut();
+      }
     }
 
     function handleKeyUp(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+
+      if (key === "q" || key === "w" || key === "e") {
+        testHandChordKeysRef.current.delete(key);
+
+        if (testHandChordKeysRef.current.size === 0) {
+          testHandChordArmedRef.current = true;
+        }
+      }
+
       if (event.key === "Enter") {
         enterKeyIsDownRef.current = false;
       }
@@ -157,6 +192,14 @@ export function OnlineGameReadOnly({
       window.removeEventListener("keyup", handleKeyUp);
     };
   });
+
+  function reloadTestHandFromKeyboard() {
+    if (isBusy || view.phase !== "playing" || !view.isViewerTurn || view.pendingChoice) {
+      return;
+    }
+
+    onReloadTestHand();
+  }
 
   useLayoutEffect(() => {
     setSelectedHandTargetPlayerId(undefined);
@@ -1315,16 +1358,17 @@ function OnlineNobleLine({
 
       if (Math.abs(x) > 1) {
         element.getAnimations().forEach((animation) => animation.cancel());
-        element.animate(
-          [
-            { transform: `translate(${x}px, 0)` },
-            { transform: "translate(0, 0)" },
-          ],
-          {
-            duration: 260,
-            easing: "cubic-bezier(0.2, 0, 0.2, 1)",
-          },
-        );
+        element.style.transition = "none";
+        element.style.transform = `translate(${x}px, 0)`;
+        void element.offsetWidth;
+        window.requestAnimationFrame(() => {
+          element.style.transition = "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)";
+          element.style.transform = "translate(0, 0)";
+          window.setTimeout(() => {
+            element.style.transition = "";
+            element.style.transform = "";
+          }, 280);
+        });
       }
     });
 

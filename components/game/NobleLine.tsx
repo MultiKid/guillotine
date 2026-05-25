@@ -95,16 +95,17 @@ export function NobleLine({
 
       if (Math.abs(x) > 1) {
         element.getAnimations().forEach((animation) => animation.cancel());
-        element.animate(
-          [
-            { transform: `translate(${x}px, ${y}px)` },
-            { transform: "translate(0, 0)" },
-          ],
-          {
-            duration: 260,
-            easing: "cubic-bezier(0.2, 0, 0.2, 1)",
-          },
-        );
+        element.style.transition = "none";
+        element.style.transform = `translate(${x}px, ${y}px)`;
+        void element.offsetWidth;
+        window.requestAnimationFrame(() => {
+          element.style.transition = "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)";
+          element.style.transform = "translate(0, 0)";
+          window.setTimeout(() => {
+            element.style.transition = "";
+            element.style.transform = "";
+          }, 280);
+        });
       }
     });
 

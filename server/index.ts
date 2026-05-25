@@ -67,6 +67,34 @@ async function startServer() {
       io.to(result.room.roomCode).emit("room:updated", payload.room);
     });
 
+    socket.on("room:rejoin", ({ roomCode, playerName } = {}, reply?: (response: unknown) => void) => {
+      const result = roomStore.rejoinRoom({
+        roomCode: String(roomCode ?? ""),
+        playerName: String(playerName ?? ""),
+        socketId: socket.id,
+      });
+
+      if (result.error || !result.room || !result.playerId) {
+        reply?.({ ok: false, error: result.error ?? "Could not rejoin room." });
+        return;
+      }
+
+      socket.join(result.room.roomCode);
+
+      const payload = {
+        ok: true,
+        room: toRoomSnapshot(result.room),
+        playerId: result.playerId,
+        gameView: result.room.gameState ? createPlayerGameView(result.room.gameState, result.playerId) : undefined,
+      };
+
+      reply?.(payload);
+      io.to(result.room.roomCode).emit("room:updated", payload.room);
+      if (result.room.gameState) {
+        emitGameViews(io, result.room);
+      }
+    });
+
     socket.on("room:quick-join", ({ playerName } = {}, reply?: (response: unknown) => void) => {
       const result = roomStore.quickJoinRoom({ playerName: String(playerName ?? ""), socketId: socket.id });
       socket.join(result.room.roomCode);

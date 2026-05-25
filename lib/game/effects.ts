@@ -1256,7 +1256,7 @@ function giveFrontNobleToPlayer(state: GameState, context: ActionEffectContext):
       };
     }),
   };
-  const triggered = applyNobleCollectionTriggers(baseState, target.playerId, frontNoble, { clownEndsTurn: frontNoble.card.name === "The Clown" });
+  const triggered = applyNobleCollectionTriggers(baseState, target.playerId, frontNoble);
 
   return {
     state: triggered.state,
@@ -1431,15 +1431,14 @@ function startClericalErrorExchange(state: GameState, context: ActionEffectConte
   }
 
   const transferredState = transferCollectedNoble(state, target.playerId, context.playerId, target.instanceId);
-  const triggered = applyNobleCollectionTriggers(transferredState, context.playerId, chosenNoble, { triggerClown: false });
-  const originalPlayerAfterTransfer = triggered.state.players.find((player) => player.id === context.playerId);
+  const originalPlayerAfterTransfer = transferredState.players.find((player) => player.id === context.playerId);
   const returnChoices =
     originalPlayerAfterTransfer?.collectedNobles.filter((noble) => noble.instanceId !== chosenNoble.instanceId) ?? [];
 
   if (returnChoices.length === 0) {
     return {
       state: {
-        ...triggered.state,
+        ...transferredState,
         pendingChoice: undefined,
         passScreen: {
           visible: false,
@@ -1448,13 +1447,12 @@ function startClericalErrorExchange(state: GameState, context: ActionEffectConte
       },
       applied: true,
       message: `collected a noble from ${targetPlayer.name} with Clerical Error`,
-      extraLogMessages: triggered.logMessages,
     };
   }
 
   return {
     state: {
-      ...triggered.state,
+      ...transferredState,
       pendingChoice: {
         type: "clericalErrorReturn",
         originalPlayerId: context.playerId,
@@ -1467,7 +1465,6 @@ function startClericalErrorExchange(state: GameState, context: ActionEffectConte
     },
     applied: true,
     message: `started a Clerical Error exchange with ${targetPlayer.name}`,
-    extraLogMessages: triggered.logMessages,
   };
 }
 
@@ -1913,12 +1910,17 @@ export function applyNobleCollectionTriggers(
   state: GameState,
   playerId: PlayerId,
   noble: CardInstance<NobleCard>,
-  options: { triggerClown?: boolean; clownEndsTurn?: boolean } = {},
+  options: { triggerAbilities?: boolean; triggerClown?: boolean; clownEndsTurn?: boolean } = {},
 ): { state: GameState; logMessages: string[] } {
   let nextState = state;
   const logMessages: string[] = [];
   const playerName = getPlayerName(nextState, playerId);
+  const shouldTriggerAbilities = options.triggerAbilities ?? true;
   const shouldTriggerClown = options.triggerClown ?? true;
+
+  if (!shouldTriggerAbilities) {
+    return { state: nextState, logMessages };
+  }
 
   if (noble.card.name === "Robespierre") {
     nextState = {
@@ -1940,7 +1942,7 @@ export function applyNobleCollectionTriggers(
         originalPlayerId: playerId,
         targetPlayerId: playerId,
         clownInstanceId: noble.instanceId,
-        returnToPassScreen: !currentPlayerIsReceiver || Boolean(options.clownEndsTurn),
+        returnToPassScreen: Boolean(options.clownEndsTurn) && !currentPlayerIsReceiver,
         advanceTurnAfterChoice: Boolean(options.clownEndsTurn),
       },
       passScreen: {

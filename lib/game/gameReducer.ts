@@ -170,30 +170,27 @@ function resolveClericalErrorReturn(state: GameState, playerId: PlayerId, nobleI
   }
 
   const transferredState = transferCollectedNobleInReducer(state, pending.originalPlayerId, playerId, chosenNoble.instanceId);
-  const triggered = applyNobleCollectionTriggers(transferredState, playerId, chosenNoble, { triggerClown: false });
   const logEntry = createLogEntry(
-    triggered.state,
+    transferredState,
     `${targetPlayer.name} completed the Clerical Error exchange with ${originalPlayer.name}.`,
     playerId,
     [pending.originalPlayerId, playerId],
   );
 
   return addBriefingEntries({
-    ...triggered.state,
+    ...transferredState,
     pendingChoice: undefined,
     returningFromPrivateChoice: true,
     passScreen: {
       visible: true,
     },
     log: [
-      ...triggered.logMessages.map((message) => createLogEntry(triggered.state, message, playerId)),
       logEntry,
-      ...triggered.state.log,
+      ...transferredState.log,
     ],
     detailedLog: [
-      ...triggered.logMessages.map((message) => createDetailedLogEntry(triggered.state, message, playerId)),
-      createDetailedLogEntry(triggered.state, `${targetPlayer.name} completed the Clerical Error exchange with ${originalPlayer.name}.`, playerId),
-      ...triggered.state.detailedLog,
+      createDetailedLogEntry(transferredState, `${targetPlayer.name} completed the Clerical Error exchange with ${originalPlayer.name}.`, playerId),
+      ...transferredState.detailedLog,
     ],
   }, [logEntry], pending.originalPlayerId);
 }
@@ -332,7 +329,10 @@ function resolveClownGift(state: GameState, playerId: PlayerId, targetPlayerId: 
   }, [logEntry], playerId);
 
   if (resolvedState.nobleLine.cards.length === 0) {
-    return endCurrentDay(resolvedState, `Day ${resolvedState.day} ended because the noble line is empty.`);
+    return endCurrentDay(resolvedState, `Day ${resolvedState.day} ended because the noble line is empty.`, {
+      nextTurnStep: resolvedState.turnStep,
+      showPassScreen: false,
+    });
   }
 
   if (resolvedState.turnEffects.endDayAfterTurn) {
