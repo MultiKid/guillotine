@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Guillotine Prototype",
+  title: "Guillotine",
   description: "Local pass-and-play card game prototype scaffold.",
 };
 
