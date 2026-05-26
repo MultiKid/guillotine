@@ -13,12 +13,20 @@ export type RoomPlayer = {
   isConnected: boolean;
 };
 
+export type UndoRequest = {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  approvedPlayerIds: string[];
+};
+
 export type Room = {
   roomCode: string;
   players: RoomPlayer[];
   hostPlayerId: string;
   status: RoomStatus;
   gameState?: GameState;
+  undoRequest?: UndoRequest;
   createdAt: number;
 };
 
@@ -35,6 +43,7 @@ export function createRoomStore() {
       hostPlayerId: hostPlayer.id,
       status: "lobby",
       gameState: undefined,
+      undoRequest: undefined,
       createdAt: Date.now(),
     };
 
@@ -176,13 +185,100 @@ export function createRoomStore() {
     return rooms.get(normalizeRoomCode(roomCode));
   }
 
+  function startUndoRequest({ roomCode, playerId }: { roomCode: string; playerId: string }) {
+    const room = rooms.get(normalizeRoomCode(roomCode));
+
+    if (!room?.gameState) {
+      return { error: "Game has not started yet." };
+    }
+
+    const requester = room.players.find((player) => player.id === playerId);
+
+    if (!requester) {
+      return { error: "Player not found." };
+    }
+
+    if (room.undoRequest) {
+      return { error: "An undo request is already pending." };
+    }
+
+    if (room.gameState.gameHistory.length === 0) {
+      return { error: "There is nothing to undo." };
+    }
+
+    room.undoRequest = {
+      id: randomUUID(),
+      requesterId: requester.id,
+      requesterName: requester.name,
+      approvedPlayerIds: [],
+    };
+
+    return { room, undoRequest: room.undoRequest };
+  }
+
+  function respondToUndoRequest({
+    approve,
+    playerId,
+    requestId,
+    roomCode,
+  }: {
+    approve: boolean;
+    playerId: string;
+    requestId: string;
+    roomCode: string;
+  }) {
+    const room = rooms.get(normalizeRoomCode(roomCode));
+
+    if (!room?.undoRequest) {
+      return { error: "There is no undo request pending." };
+    }
+
+    if (room.undoRequest.id !== requestId) {
+      return { error: "That undo request is no longer active." };
+    }
+
+    if (room.undoRequest.requesterId === playerId) {
+      return { error: "The requesting player does not vote on their own undo request." };
+    }
+
+    const player = room.players.find((candidate) => candidate.id === playerId);
+
+    if (!player) {
+      return { error: "Player not found." };
+    }
+
+    if (!approve) {
+      room.undoRequest = undefined;
+      return { room, rejected: true };
+    }
+
+    if (!room.undoRequest.approvedPlayerIds.includes(playerId)) {
+      room.undoRequest.approvedPlayerIds.push(playerId);
+    }
+
+    return { room, approved: true, unanimous: isUndoRequestApprovedByAllConnectedOthers(room) };
+  }
+
+  function clearUndoRequest(roomCode: string) {
+    const room = rooms.get(normalizeRoomCode(roomCode));
+
+    if (room) {
+      room.undoRequest = undefined;
+    }
+
+    return room;
+  }
+
   return {
+    clearUndoRequest,
     createRoom,
     disconnectSocket,
     getRoom,
     joinRoom,
     quickJoinRoom,
     rejoinRoom,
+    respondToUndoRequest,
+    startUndoRequest,
     startRoom,
   };
 }
@@ -198,7 +294,23 @@ export function toRoomSnapshot(room: Room) {
       isHost: player.id === room.hostPlayerId,
       isConnected: player.isConnected,
     })),
+    undoRequest: room.undoRequest
+      ? {
+          id: room.undoRequest.id,
+          requesterId: room.undoRequest.requesterId,
+          requesterName: room.undoRequest.requesterName,
+          approvedPlayerIds: [...room.undoRequest.approvedPlayerIds],
+        }
+      : undefined,
   };
+}
+
+function isUndoRequestApprovedByAllConnectedOthers(room: Room): boolean {
+  const requiredPlayerIds = room.players
+    .filter((player) => player.isConnected && player.id !== room.undoRequest?.requesterId)
+    .map((player) => player.id);
+
+  return requiredPlayerIds.every((playerId) => room.undoRequest?.approvedPlayerIds.includes(playerId));
 }
 
 function createPlayer({ name, socketId }: { name: string; socketId: string }): RoomPlayer {

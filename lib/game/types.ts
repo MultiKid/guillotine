@@ -211,7 +211,7 @@ export type GameCommand =
   | { type: "START_GAME"; playerNames: string[] }
   | { type: "READY_FOR_TURN" }
   | { type: "DISMISS_NOTICE" }
-  | { type: "RELOAD_TEST_HAND"; playerId: PlayerId }
+  | { type: "RELOAD_TEST_HAND"; playerId: PlayerId; allowAnyPlayer?: boolean }
   | { type: "DISCARD_CALLOUS_GUARDS"; playerId: PlayerId; cardId: CardInstanceId }
   | { type: "RESOLVE_INFIGHTING"; playerId: PlayerId; cardIds: CardInstanceId[] }
   | { type: "RESOLVE_CLERICAL_ERROR_RETURN"; playerId: PlayerId; nobleId?: CardInstanceId }

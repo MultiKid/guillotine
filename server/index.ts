@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import next from "next";
 import { Server as SocketServer } from "socket.io";
+import { gameReducer } from "@/lib/game/gameReducer";
 import { createPlayerGameView } from "@/lib/game/playerView";
 import type { ActionTarget, CardInstanceId, PlayerId } from "@/lib/game/types";
 import { applyOnlineGameCommand, createOnlineGameState } from "./onlineEngine";
@@ -209,9 +210,58 @@ async function startServer() {
         {
           type: "RELOAD_TEST_HAND",
           playerId: String(playerId ?? ""),
+          allowAnyPlayer: true,
         },
         reply,
       );
+    });
+
+    socket.on("game:ask-for-undo", ({ roomCode, playerId } = {}, reply?: (response: unknown) => void) => {
+      const result = roomStore.startUndoRequest({
+        roomCode: String(roomCode ?? ""),
+        playerId: String(playerId ?? ""),
+      });
+
+      if (result.error || !result.room) {
+        reply?.({ ok: false, error: result.error ?? "Could not request undo." });
+        return;
+      }
+
+      const snapshot = toRoomSnapshot(result.room);
+      reply?.({ ok: true, room: snapshot });
+      io.to(result.room.roomCode).emit("room:updated", snapshot);
+    });
+
+    socket.on("game:respond-to-undo", ({ approve, playerId, requestId, roomCode } = {}, reply?: (response: unknown) => void) => {
+      const result = roomStore.respondToUndoRequest({
+        approve: Boolean(approve),
+        playerId: String(playerId ?? ""),
+        requestId: String(requestId ?? ""),
+        roomCode: String(roomCode ?? ""),
+      });
+
+      if (result.error || !result.room) {
+        reply?.({ ok: false, error: result.error ?? "Could not respond to undo request." });
+        return;
+      }
+
+      if (result.unanimous && result.room.gameState) {
+        const previousState = result.room.gameState;
+        const nextState = gameReducer(previousState, { type: "UNDO_LAST_ACTION" });
+
+        result.room.gameState = nextState;
+        result.room.undoRequest = undefined;
+
+        const snapshot = toRoomSnapshot(result.room);
+        reply?.({ ok: true, room: snapshot, gameView: createPlayerGameView(result.room.gameState, String(playerId ?? "")) });
+        io.to(result.room.roomCode).emit("room:updated", snapshot);
+        emitGameViews(io, result.room);
+        return;
+      }
+
+      const snapshot = toRoomSnapshot(result.room);
+      reply?.({ ok: true, room: snapshot });
+      io.to(result.room.roomCode).emit("room:updated", snapshot);
     });
 
     socket.on("game:end-turn", ({ roomCode, playerId } = {}, reply?: (response: unknown) => void) => {
@@ -313,6 +363,11 @@ function applyCommandAndReply(
 
   if (!room?.gameState) {
     reply?.({ ok: false, error: "Game has not started yet." });
+    return;
+  }
+
+  if (room.undoRequest) {
+    reply?.({ ok: false, error: "Resolve the pending undo request before continuing." });
     return;
   }
 

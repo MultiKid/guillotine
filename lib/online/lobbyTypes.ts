@@ -12,6 +12,12 @@ export type OnlineRoomSnapshot = {
   players: OnlineRoomPlayer[];
   hostPlayerId: string;
   status: "lobby" | "started";
+  undoRequest?: {
+    id: string;
+    requesterId: string;
+    requesterName: string;
+    approvedPlayerIds: string[];
+  };
 };
 
 export type LobbyResponse =

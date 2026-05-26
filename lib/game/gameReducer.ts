@@ -40,7 +40,7 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
         notice: undefined,
       };
     case "RELOAD_TEST_HAND":
-      return state.passScreen.visible ? state : reloadTestHand(state, command.playerId);
+      return state.passScreen.visible ? state : reloadTestHand(state, command.playerId, command.allowAnyPlayer);
     case "DISCARD_CALLOUS_GUARDS":
       return state.passScreen.visible ? state : discardCallousGuards(state, command.playerId, command.cardId);
     case "RESOLVE_INFIGHTING":
@@ -437,14 +437,15 @@ function discardCallousGuards(state: GameState, playerId: PlayerId, cardId: Card
   };
 }
 
-function reloadTestHand(state: GameState, playerId: PlayerId): GameState {
+function reloadTestHand(state: GameState, playerId: PlayerId, allowAnyPlayer = false): GameState {
   const currentPlayer = state.players[state.currentPlayerIndex];
 
-  if (state.phase !== "playing" || !currentPlayer || currentPlayer.id !== playerId) {
+  if (state.phase !== "playing" || !currentPlayer || (!allowAnyPlayer && currentPlayer.id !== playerId)) {
     return state;
   }
 
-  const historyState = pushGameHistory(state, `${currentPlayer.name} reloaded their test hand.`);
+  const playerName = state.players.find((candidate) => candidate.id === playerId)?.name ?? currentPlayer.name;
+  const historyState = pushGameHistory(state, `${playerName} reloaded their test hand.`);
   const player = historyState.players.find((candidate) => candidate.id === playerId);
 
   if (!player) {
@@ -475,7 +476,7 @@ function reloadTestHand(state: GameState, playerId: PlayerId): GameState {
     log: [
       createLogEntry(
         historyState,
-        `${currentPlayer.name} reloaded a fresh test hand of ${newHand.length} action card${newHand.length === 1 ? "" : "s"}.`,
+        `${player.name} reloaded a fresh test hand of ${newHand.length} action card${newHand.length === 1 ? "" : "s"}.`,
         playerId,
       ),
       ...historyState.log,
@@ -483,7 +484,7 @@ function reloadTestHand(state: GameState, playerId: PlayerId): GameState {
     detailedLog: [
       createDetailedLogEntry(
         historyState,
-        `${currentPlayer.name} reloaded a fresh test hand of ${newHand.length} action card${newHand.length === 1 ? "" : "s"}: ${formatActionCardNames(newHand)}.`,
+        `${player.name} reloaded a fresh test hand of ${newHand.length} action card${newHand.length === 1 ? "" : "s"}: ${formatActionCardNames(newHand)}.`,
         playerId,
       ),
       ...historyState.detailedLog,

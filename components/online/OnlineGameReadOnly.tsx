@@ -25,6 +25,8 @@ type OnlineGameReadOnlyProps = {
   onResolveInfighting: (cardIds: CardInstanceId[]) => void;
   onResolveInnocentVictimDiscard: (cardId?: CardInstanceId) => void;
   onReloadTestHand: () => void;
+  onRequestUndo: () => void;
+  onRespondToUndoRequest: (requestId: string, approve: boolean) => void;
   onTakeFrontNoble: (pendingReorder?: { cardId: CardInstanceId; reorderedNobleIds: CardInstanceId[] }) => void;
   onDismissRoomAlert?: () => void;
   room?: OnlineRoomSnapshot;
@@ -50,6 +52,23 @@ type OnlineScorePulseState = {
   previousScore: number;
 };
 
+type OnlineLineCloneState = {
+  colorCategory: NobleCard["colorCategory"];
+  height: number;
+  id: string;
+  imagePath?: string;
+  isActive: boolean;
+  left: number;
+  name: string;
+  top: number;
+  width: number;
+  x: number;
+  y: number;
+};
+
+const BACKGROUND_TRANSITION_DURATION_MS = 1400;
+const ONLINE_LINE_MOVE_DURATION_MS = 260;
+
 export function OnlineGameReadOnly({
   error,
   isBusy = false,
@@ -60,6 +79,8 @@ export function OnlineGameReadOnly({
   onResolveInfighting,
   onResolveInnocentVictimDiscard,
   onReloadTestHand,
+  onRequestUndo,
+  onRespondToUndoRequest,
   onTakeFrontNoble,
   onDismissRoomAlert,
   room,
@@ -81,9 +102,11 @@ export function OnlineGameReadOnly({
   const enterKeyIsDownRef = useRef(false);
   const testHandChordKeysRef = useRef(new Set<string>());
   const testHandChordArmedRef = useRef(true);
+  const wasViewerTurnRef = useRef(view.phase === "playing" && view.isViewerTurn);
   const currentPlayer = view.players.find((player) => player.id === view.currentPlayerId);
   const selectedDetailsPlayer = view.players.find((player) => player.id === selectedDetailsPlayerId);
   const currentTurnActivity = view.isViewerTurn ? [] : getCurrentTurnActivity(view);
+  const visibleHistoryLog = view.log.filter((entry) => !isTestHandReloadMessage(entry.message));
   const pendingScorePulse = scorePulse ? undefined : getPendingOpponentScorePulse(view, previousViewRef.current);
   const displayedScorePulse = scorePulse ?? pendingScorePulse;
   const canTakeFrontNoble =
@@ -194,7 +217,7 @@ export function OnlineGameReadOnly({
   });
 
   function reloadTestHandFromKeyboard() {
-    if (isBusy || view.phase !== "playing" || !view.isViewerTurn || view.pendingChoice) {
+    if (isBusy || view.phase !== "playing") {
       return;
     }
 
@@ -251,6 +274,20 @@ export function OnlineGameReadOnly({
       transitionGameBackground(nextCount, backgroundTransitionTimeoutRef);
     }
   }, [view.currentPlayerId, view.nobleLine.length, view.phase, view.turnStep]);
+
+  useEffect(() => {
+    const isViewerOfficialTurn =
+      view.phase === "playing" &&
+      view.isViewerTurn &&
+      view.turnStep === "playActionOptional" &&
+      !view.pendingChoice;
+    const wasViewerOfficialTurn = wasViewerTurnRef.current;
+    wasViewerTurnRef.current = isViewerOfficialTurn;
+
+    if (!wasViewerOfficialTurn && isViewerOfficialTurn) {
+      void playYourTurnNotificationSound();
+    }
+  }, [view.currentPlayerId, view.isViewerTurn, view.pendingChoice, view.phase, view.turnStep]);
 
   useEffect(() => {
     if (!isReorderAction) {
@@ -406,6 +443,45 @@ export function OnlineGameReadOnly({
 
   return (
     <div className="flex flex-col gap-4">
+      {room?.undoRequest && room.undoRequest.requesterId !== view.viewerPlayerId ? (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-stone-950/35 p-4">
+          <div className="max-w-md rounded-lg border border-amber-300 bg-white/80 p-5 text-center shadow-xl backdrop-blur-sm">
+            <h2 className="text-lg font-bold text-stone-950">Undo Request</h2>
+            <p className="mt-2 text-sm text-stone-700">
+              {room.undoRequest.requesterName} asked to undo the last thing that happened. Allow the undo?
+            </p>
+            {room.undoRequest.approvedPlayerIds.includes(view.viewerPlayerId) ? (
+              <p className="mt-4 rounded-md border border-green-300 bg-green-50/70 px-3 py-2 text-sm font-semibold text-green-900">
+                You approved this undo. Waiting for the other players.
+              </p>
+            ) : (
+              <div className="mt-4 flex justify-center gap-2">
+                <button
+                  className="rounded-md border border-green-700 bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700"
+                  disabled={isBusy}
+                  onClick={() => onRespondToUndoRequest(room.undoRequest?.id ?? "", true)}
+                  type="button"
+                >
+                  Yes
+                </button>
+                <button
+                  className="rounded-md border border-stone-400 bg-white/70 px-4 py-2 text-sm font-semibold text-stone-900 transition hover:bg-white"
+                  disabled={isBusy}
+                  onClick={() => onRespondToUndoRequest(room.undoRequest?.id ?? "", false)}
+                  type="button"
+                >
+                  No
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+      {room?.undoRequest && room.undoRequest.requesterId === view.viewerPlayerId ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50/55 px-3 py-2 text-sm text-amber-950 backdrop-blur-sm">
+          Waiting for the other players to approve your undo request.
+        </div>
+      ) : null}
       {roomAlert ? (
         <div className="fixed inset-0 z-[95] flex items-center justify-center bg-stone-950/35 p-4">
           <div className="max-w-md rounded-lg border border-amber-300 bg-white/75 p-5 text-center shadow-xl backdrop-blur-sm">
@@ -508,6 +584,7 @@ export function OnlineGameReadOnly({
             const isSelectedHandTargetPlayer = selectedHandTargetPlayerId === player.id;
             const directPlayerTargetChoice = playerTargetChoices[0];
             const isDisconnected = room?.players.find((roomPlayer) => roomPlayer.id === player.id)?.isConnected === false;
+            const isActiveTurnPlayer = player.id === view.currentPlayerId;
             const canOpenPlayerDetails = !isTargetablePlayer && player.id !== view.viewerPlayerId;
 
             function handlePlayerTileClick() {
@@ -540,6 +617,8 @@ export function OnlineGameReadOnly({
               <div
                 className={`rounded-md border p-2 text-left transition focus:outline-none focus:ring-2 focus:ring-amber-400 ${
                   isTargetablePlayer || canOpenPlayerDetails ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md" : "cursor-default"
+                } ${
+                  isActiveTurnPlayer ? "ring-2 ring-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.24)]" : ""
                 } ${
                   isTargetablePlayer
                     ? isSelectedHandTargetPlayer
@@ -689,6 +768,14 @@ export function OnlineGameReadOnly({
               type="button"
             >
               {isBusy ? "Working..." : "Take Front Noble"}
+            </button>
+            <button
+              className="rounded-md border border-amber-300 bg-amber-50/60 px-3 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100/70 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isBusy || Boolean(room?.undoRequest)}
+              onClick={onRequestUndo}
+              type="button"
+            >
+              Ask for Undo
             </button>
           </div>
         </div>
@@ -859,9 +946,9 @@ export function OnlineGameReadOnly({
         </Card>
 
         <Card>
-          <h3 className="text-lg font-semibold">Public History</h3>
+          <h3 className="text-lg font-semibold">History</h3>
           <div className="mt-3 max-h-[42rem] min-h-[28rem] overflow-auto pr-2 text-sm text-stone-700">
-            {view.log.map((entry) => (
+            {visibleHistoryLog.map((entry) => (
               <p className="mb-2" key={entry.id}>{entry.message}</p>
             ))}
           </div>
@@ -1314,6 +1401,8 @@ function OnlineNobleLine({
 }) {
   const cardRefs = useRef(new Map<CardInstanceId, HTMLDivElement>());
   const previousRectsRef = useRef(new Map<CardInstanceId, DOMRect>());
+  const [lineClones, setLineClones] = useState<OnlineLineCloneState[]>([]);
+  const [hiddenLineAnimationIds, setHiddenLineAnimationIds] = useState<CardInstanceId[]>([]);
   const [dragState, setDragState] = useState<{
     currentX: number;
     instanceId: CardInstanceId;
@@ -1344,6 +1433,7 @@ function OnlineNobleLine({
 
   useLayoutEffect(() => {
     const nextRects = new Map<CardInstanceId, DOMRect>();
+    const nextClones: OnlineLineCloneState[] = [];
 
     cardRefs.current.forEach((element, instanceId) => {
       const nextRect = element.getBoundingClientRect();
@@ -1357,61 +1447,115 @@ function OnlineNobleLine({
       const x = previousRect.left - nextRect.left;
 
       if (Math.abs(x) > 1) {
-        element.getAnimations().forEach((animation) => animation.cancel());
-        element.style.transition = "none";
-        element.style.transform = `translate(${x}px, 0)`;
-        void element.offsetWidth;
-        window.requestAnimationFrame(() => {
-          element.style.transition = "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)";
-          element.style.transform = "translate(0, 0)";
-          window.setTimeout(() => {
-            element.style.transition = "";
-            element.style.transform = "";
-          }, 280);
+        const noble = displayedNobles.find((candidate) => candidate.instanceId === instanceId);
+
+        if (!noble) {
+          return;
+        }
+
+        nextClones.push({
+          colorCategory: noble.card.colorCategory,
+          height: previousRect.height,
+          id: instanceId,
+          imagePath: noble.card.imagePath,
+          isActive: false,
+          left: previousRect.left,
+          name: noble.card.name,
+          top: previousRect.top,
+          width: previousRect.width,
+          x: nextRect.left - previousRect.left,
+          y: nextRect.top - previousRect.top,
         });
       }
     });
 
     previousRectsRef.current = nextRects;
+
+    if (nextClones.length > 0) {
+      const cloneIds = nextClones.map((clone) => clone.id);
+      setHiddenLineAnimationIds(cloneIds);
+      setLineClones(nextClones);
+      window.requestAnimationFrame(() => {
+        setLineClones((currentClones) =>
+          currentClones.map((clone) => (cloneIds.includes(clone.id) ? { ...clone, isActive: true } : clone)),
+        );
+      });
+      window.setTimeout(() => {
+        setLineClones((currentClones) => currentClones.filter((clone) => !cloneIds.includes(clone.id)));
+        setHiddenLineAnimationIds((currentIds) => currentIds.filter((instanceId) => !cloneIds.includes(instanceId)));
+      }, ONLINE_LINE_MOVE_DURATION_MS + 40);
+    }
   }, [displayedNobles, dragState?.instanceId]);
 
   return (
-    <div className="mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-12">
-      {displayedNobles.map((noble, index) => (
-        <OnlineNobleLineCard
-          dragState={dragState}
-          index={index}
-          isBusy={isBusy}
-          isMovementTarget={movementTargetIds.has(noble.instanceId)}
-          isReorderMode={isReorderMode}
-          landingTarget={landingTargetByPosition.get(index + 1)}
-          key={noble.instanceId}
-          legalReorderIds={legalReorderIds}
-          noble={noble}
-          reorderDraftIds={reorderDraftIds}
-          selectedAction={selectedAction}
-          selectedNobleTargetId={selectedNobleTargetId}
-          targetChoices={targetChoicesByNobleId.get(noble.instanceId) ?? []}
-          onCardElementChange={(element) => {
-            if (element) {
-              cardRefs.current.set(noble.instanceId, element);
-            } else {
-              cardRefs.current.delete(noble.instanceId);
-            }
-          }}
-          onDragStateChange={setDragState}
-          onPlayAction={onPlayAction}
-          onPreviewCard={onPreviewCard}
-          onReorderDraftChange={onReorderDraftChange}
-          onSelectNobleTarget={onSelectNobleTarget}
-        />
+    <>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-12">
+        {displayedNobles.map((noble, index) => (
+          <OnlineNobleLineCard
+            dragState={dragState}
+            hiddenForLineAnimation={hiddenLineAnimationIds.includes(noble.instanceId)}
+            index={index}
+            isBusy={isBusy}
+            isMovementTarget={movementTargetIds.has(noble.instanceId)}
+            isReorderMode={isReorderMode}
+            landingTarget={landingTargetByPosition.get(index + 1)}
+            key={noble.instanceId}
+            legalReorderIds={legalReorderIds}
+            noble={noble}
+            reorderDraftIds={reorderDraftIds}
+            selectedAction={selectedAction}
+            selectedNobleTargetId={selectedNobleTargetId}
+            targetChoices={targetChoicesByNobleId.get(noble.instanceId) ?? []}
+            onCardElementChange={(element) => {
+              if (element) {
+                cardRefs.current.set(noble.instanceId, element);
+              } else {
+                cardRefs.current.delete(noble.instanceId);
+              }
+            }}
+            onDragStateChange={setDragState}
+            onPlayAction={onPlayAction}
+            onPreviewCard={onPreviewCard}
+            onReorderDraftChange={onReorderDraftChange}
+            onSelectNobleTarget={onSelectNobleTarget}
+          />
+        ))}
+      </div>
+      {lineClones.map((clone) => (
+        <OnlineLineMoveClone clone={clone} key={clone.id} />
       ))}
+    </>
+  );
+}
+
+function OnlineLineMoveClone({ clone }: { clone: OnlineLineCloneState }) {
+  return (
+    <div
+      className={`pointer-events-none fixed z-[70] rounded-md border p-2 text-left shadow-sm transition-transform ${getNobleColorStyle(clone.colorCategory)}`}
+      style={{
+        height: clone.height,
+        left: clone.left,
+        top: clone.top,
+        transform: clone.isActive ? `translate(${clone.x}px, ${clone.y}px)` : "translate(0, 0)",
+        transitionDuration: `${ONLINE_LINE_MOVE_DURATION_MS}ms`,
+        transitionTimingFunction: "cubic-bezier(0.2, 0, 0.2, 1)",
+        width: clone.width,
+      }}
+    >
+      <CardImage
+        alt={clone.name}
+        imageClassName="aspect-[5/7] border border-stone-200 object-cover shadow-sm"
+        imagePath={clone.imagePath}
+      >
+        <div className="rounded bg-white/60 p-1 text-xs font-semibold leading-tight">{clone.name}</div>
+      </CardImage>
     </div>
   );
 }
 
 function OnlineNobleLineCard({
   dragState,
+  hiddenForLineAnimation,
   index,
   isBusy,
   isMovementTarget,
@@ -1436,6 +1580,7 @@ function OnlineNobleLineCard({
     slotWidth: number;
     startX: number;
   };
+  hiddenForLineAnimation: boolean;
   index: number;
   isBusy: boolean;
   isMovementTarget: boolean;
@@ -1500,7 +1645,7 @@ function OnlineNobleLineCard({
         canPreview ? "cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400" : ""
       } ${
         isReorderTarget ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
-      } ${colorStyle}`}
+      } ${hiddenForLineAnimation ? "opacity-0" : ""} ${colorStyle}`}
       data-online-noble-id={noble.instanceId}
       ref={onCardElementChange}
       role={isWholeCardClickable ? "button" : undefined}
@@ -2064,6 +2209,46 @@ function normalizeCardName(name: string): string {
   return name.replace(/[’']/g, "").toLowerCase();
 }
 
+async function playYourTurnNotificationSound() {
+  try {
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      return;
+    }
+
+    const audioContext = new AudioContextConstructor();
+
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    const now = audioContext.currentTime;
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.045, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+    gain.connect(audioContext.destination);
+
+    [659.25, 880].forEach((frequency, index) => {
+      const oscillator = audioContext.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, now + index * 0.11);
+      oscillator.connect(gain);
+      oscillator.start(now + index * 0.11);
+      oscillator.stop(now + index * 0.11 + 0.16);
+    });
+
+    window.setTimeout(() => {
+      void audioContext.close();
+    }, 700);
+  } catch {
+    // Browsers may block audio until the tab has received a user gesture.
+  }
+}
+
 function isTurnActivityMessage(message: string): boolean {
   const normalized = message.toLowerCase();
 
@@ -2074,6 +2259,10 @@ function isTurnActivityMessage(message: string): boolean {
     normalized.includes(" gave the clown") ||
     normalized.includes("triggered:")
   );
+}
+
+function isTestHandReloadMessage(message: string): boolean {
+  return message.toLowerCase().includes("reloaded a fresh test hand");
 }
 
 function getLegalReorderIds(targets: OnlineActionTargetChoice[]): CardInstanceId[] {
@@ -2137,10 +2326,11 @@ function transitionGameBackgroundThroughNight(nobleCount: number, timeoutRef: Mu
   const sunsetImage = getBackgroundImageValue(1);
   const nightImage = getNightBackgroundImageValue();
   const nextDayImage = getBackgroundImageValue(nobleCount);
+  const stepDelay = BACKGROUND_TRANSITION_DURATION_MS + 180;
 
   transitionGameBackgroundTo(sunsetImage, timeoutRef, false);
-  timeoutRef.current.push(window.setTimeout(() => transitionGameBackgroundTo(nightImage, timeoutRef, false), 1600));
-  timeoutRef.current.push(window.setTimeout(() => transitionGameBackgroundTo(nextDayImage, timeoutRef, false), 3200));
+  timeoutRef.current.push(window.setTimeout(() => transitionGameBackgroundTo(nightImage, timeoutRef, false), stepDelay));
+  timeoutRef.current.push(window.setTimeout(() => transitionGameBackgroundTo(nextDayImage, timeoutRef, false), stepDelay * 2));
 }
 
 function transitionGameBackgroundTo(backgroundImage: string, timeoutRef: MutableRefObject<number[]>, clearExisting = true) {
@@ -2148,12 +2338,18 @@ function transitionGameBackgroundTo(backgroundImage: string, timeoutRef: Mutable
     clearBackgroundTransitionTimeouts(timeoutRef);
   }
 
+  document.documentElement.style.setProperty("--game-background-transition", "none");
   document.documentElement.style.setProperty("--game-background-next-image", backgroundImage);
-  document.documentElement.style.setProperty("--game-background-next-opacity", "1");
+  document.documentElement.style.setProperty("--game-background-next-opacity", "0");
+  void document.documentElement.offsetHeight;
+  window.requestAnimationFrame(() => {
+    document.documentElement.style.setProperty("--game-background-transition", `opacity ${BACKGROUND_TRANSITION_DURATION_MS}ms ease-in-out`);
+    document.documentElement.style.setProperty("--game-background-next-opacity", "1");
+  });
 
   timeoutRef.current.push(window.setTimeout(() => {
     commitBackgroundTransition(backgroundImage);
-  }, 1500));
+  }, BACKGROUND_TRANSITION_DURATION_MS + 80));
 }
 
 function commitBackgroundTransition(backgroundImage: string) {
@@ -2162,7 +2358,7 @@ function commitBackgroundTransition(backgroundImage: string) {
   document.documentElement.style.setProperty("--game-background-transition", "none");
   document.documentElement.style.setProperty("--game-background-next-opacity", "0");
   window.requestAnimationFrame(() => {
-    document.documentElement.style.setProperty("--game-background-transition", "opacity 1400ms ease-in-out");
+    document.documentElement.style.setProperty("--game-background-transition", `opacity ${BACKGROUND_TRANSITION_DURATION_MS}ms ease-in-out`);
   });
 }
 

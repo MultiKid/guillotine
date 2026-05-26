@@ -13,6 +13,7 @@ type OnlineLobbyProps = {
 };
 
 const ONLINE_REJOIN_STORAGE_KEY = "guillotine-online-room";
+const SOCKET_ACK_TIMEOUT_MS = 4000;
 
 type SocketClient = {
   disconnect: () => void;
@@ -214,6 +215,8 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         onResolveInfighting={resolveInfighting}
         onResolveInnocentVictimDiscard={resolveInnocentVictimDiscard}
         onReloadTestHand={reloadTestHand}
+        onRequestUndo={requestUndo}
+        onRespondToUndoRequest={respondToUndoRequest}
         onTakeFrontNoble={takeFrontNoble}
         room={room}
         roomAlert={roomAlert}
@@ -425,6 +428,99 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         }
       },
     );
+  }
+
+  function requestUndo() {
+    if (!room || !playerId) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(undefined);
+    const clearRequestTimeout = startSocketAckTimeout(
+      "Undo request did not reach the server. Restart npm run dev if this started after a code change.",
+    );
+    socketRef.current?.emit(
+      "game:ask-for-undo",
+      {
+        roomCode: room.roomCode,
+        playerId,
+      },
+      (response) => {
+        clearRequestTimeout();
+        const commandResponse = response as { ok?: boolean; error?: string; room?: OnlineRoomSnapshot };
+
+        if (!commandResponse?.ok) {
+          setError(commandResponse?.error ?? "Could not ask for undo.");
+          setIsBusy(false);
+          return;
+        }
+
+        if (commandResponse.room) {
+          setRoom(commandResponse.room);
+        }
+
+        setIsBusy(false);
+      },
+    );
+  }
+
+  function respondToUndoRequest(requestId: string, approve: boolean) {
+    if (!room || !playerId || !requestId) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(undefined);
+    const clearResponseTimeout = startSocketAckTimeout(
+      "Undo response did not reach the server. Restart npm run dev if this started after a code change.",
+    );
+    socketRef.current?.emit(
+      "game:respond-to-undo",
+      {
+        approve,
+        playerId,
+        requestId,
+        roomCode: room.roomCode,
+      },
+      (response) => {
+        clearResponseTimeout();
+        const commandResponse = response as { ok?: boolean; error?: string; gameView?: PlayerGameView; room?: OnlineRoomSnapshot };
+
+        if (!commandResponse?.ok) {
+          setError(commandResponse?.error ?? "Could not respond to undo request.");
+          setIsBusy(false);
+          return;
+        }
+
+        if (commandResponse.room) {
+          setRoom(commandResponse.room);
+        }
+
+        if (commandResponse.gameView) {
+          setGameView(commandResponse.gameView);
+        }
+
+        setIsBusy(false);
+      },
+    );
+  }
+
+  function startSocketAckTimeout(message: string) {
+    let didRespond = false;
+    const timeoutId = window.setTimeout(() => {
+      if (didRespond) {
+        return;
+      }
+
+      setError(message);
+      setIsBusy(false);
+    }, SOCKET_ACK_TIMEOUT_MS);
+
+    return () => {
+      didRespond = true;
+      window.clearTimeout(timeoutId);
+    };
   }
 
   function discardCallousGuards(cardId: CardInstanceId) {

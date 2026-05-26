@@ -24,7 +24,7 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
     buttonLabel: "Play Online",
     setupTitle: "Online Game Setup",
     setupDescription: "Private online rooms for friends or family playing on separate devices.",
-    badge: "Future server-owned game",
+    badge: "Private online game",
   },
 ];
 
