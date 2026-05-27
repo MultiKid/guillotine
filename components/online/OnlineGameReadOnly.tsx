@@ -1533,6 +1533,9 @@ const OnlineNobleLine = memo(function OnlineNobleLineComponent({
   selectedNobleTargetId,
   targetChoicesByNobleId,
 }: OnlineNobleLineProps) {
+  const cardRefs = useRef(new Map<CardInstanceId, HTMLDivElement>());
+  const previousOrderIdsRef = useRef<CardInstanceId[]>([]);
+  const previousRectsRef = useRef(new Map<CardInstanceId, DOMRect>());
   const [dragState, setDragState] = useState<{
     currentX: number;
     instanceId: CardInstanceId;
@@ -1546,6 +1549,7 @@ const OnlineNobleLine = memo(function OnlineNobleLineComponent({
     },
     [isReorderMode, nobles, reorderDraftIds],
   );
+  const displayedNobleOrderKey = displayedNobles.map((noble) => noble.instanceId).join("|");
   const movementTargetIds = useMemo(
     () => new Set(movementTargets.map((target) => getTargetNobleId(target.target)).filter(Boolean)),
     [movementTargets],
@@ -1560,6 +1564,49 @@ const OnlineNobleLine = memo(function OnlineNobleLineComponent({
       setDragState(undefined);
     }
   }, [isReorderMode]);
+
+  useLayoutEffect(() => {
+    const nextRects = new Map<CardInstanceId, DOMRect>();
+    const nextOrderIds = displayedNobles.map((noble) => noble.instanceId);
+    const previousOrderIds = previousOrderIdsRef.current;
+    const previousIdSet = new Set(previousOrderIds);
+    const canAnimateLineChange =
+      previousOrderIds.length > 0 &&
+      nextOrderIds.length <= previousOrderIds.length &&
+      nextOrderIds.every((instanceId) => previousIdSet.has(instanceId));
+
+    cardRefs.current.forEach((element, instanceId) => {
+      const nextRect = element.getBoundingClientRect();
+      const previousRect = previousRectsRef.current.get(instanceId);
+      nextRects.set(instanceId, nextRect);
+
+      if (!canAnimateLineChange || !previousRect || dragState?.instanceId === instanceId) {
+        return;
+      }
+
+      const x = previousRect.left - nextRect.left;
+
+      if (Math.abs(x) <= 1) {
+        return;
+      }
+
+      element.getAnimations().forEach((animation) => animation.cancel());
+      element.style.transition = "none";
+      element.style.transform = `translateX(${x}px)`;
+      void element.offsetWidth;
+      window.requestAnimationFrame(() => {
+        element.style.transition = "transform 280ms cubic-bezier(0.2, 0, 0.2, 1)";
+        element.style.transform = "translateX(0)";
+        window.setTimeout(() => {
+          element.style.transition = "";
+          element.style.transform = "";
+        }, 300);
+      });
+    });
+
+    previousOrderIdsRef.current = nextOrderIds;
+    previousRectsRef.current = nextRects;
+  }, [displayedNobleOrderKey, dragState?.instanceId]);
 
   return (
     <div className="mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-12">
@@ -1578,6 +1625,13 @@ const OnlineNobleLine = memo(function OnlineNobleLineComponent({
           selectedAction={selectedAction}
           selectedNobleTargetId={selectedNobleTargetId}
           targetChoices={targetChoicesByNobleId.get(noble.instanceId) ?? []}
+          onCardElementChange={(element) => {
+            if (element) {
+              cardRefs.current.set(noble.instanceId, element);
+            } else {
+              cardRefs.current.delete(noble.instanceId);
+            }
+          }}
           onDragStateChange={setDragState}
           onPlayAction={onPlayAction}
           onPreviewCard={onPreviewCard}
@@ -1606,6 +1660,7 @@ function OnlineNobleLineCard({
   selectedAction,
   selectedNobleTargetId,
   targetChoices,
+  onCardElementChange,
   onDragStateChange,
 }: {
   dragState?: {
@@ -1629,6 +1684,7 @@ function OnlineNobleLineCard({
   selectedAction?: CardInstance<ActionCard>;
   selectedNobleTargetId?: CardInstanceId;
   targetChoices: OnlineActionTargetChoice[];
+  onCardElementChange: (element: HTMLDivElement | null) => void;
   onDragStateChange: (dragState: {
     currentX: number;
     instanceId: CardInstanceId;
@@ -1679,6 +1735,7 @@ function OnlineNobleLineCard({
         isReorderTarget ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
       } ${colorStyle}`}
       data-online-noble-id={noble.instanceId}
+      ref={onCardElementChange}
       role={isWholeCardClickable ? "button" : undefined}
       tabIndex={isWholeCardClickable ? 0 : undefined}
       onClick={() => {
