@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActionDiscardPile } from "@/components/game/ActionDiscardPile";
 import { CollectedNobleStacks, InFrontActionStack } from "@/components/game/CollectedNobleStacks";
 import { GameEndScreen } from "@/components/game/GameEndScreen";
@@ -24,6 +24,7 @@ type OnlineGameReadOnlyProps = {
   onResolveClownGift: (targetPlayerId: string) => void;
   onResolveInfighting: (cardIds: CardInstanceId[]) => void;
   onResolveInnocentVictimDiscard: (cardId?: CardInstanceId) => void;
+  onResolveLoyalGuards: (useProtection: boolean) => void;
   onReloadTestHand: () => void;
   onRequestUndo: () => void;
   onRespondToUndoRequest: (requestId: string, approve: boolean) => void;
@@ -52,22 +53,16 @@ type OnlineScorePulseState = {
   previousScore: number;
 };
 
-type OnlineLineCloneState = {
-  colorCategory: NobleCard["colorCategory"];
-  height: number;
+type OnlineToastState = {
   id: string;
-  imagePath?: string;
-  isActive: boolean;
-  left: number;
-  name: string;
-  top: number;
-  width: number;
-  x: number;
-  y: number;
+  isVisible: boolean;
+  message: string;
 };
 
 const BACKGROUND_TRANSITION_DURATION_MS = 1400;
-const ONLINE_LINE_MOVE_DURATION_MS = 260;
+const ONLINE_TOAST_MIN_VISIBLE_MS = 3000;
+const ONLINE_TOAST_MAX_VISIBLE_MS = 8000;
+const ONLINE_TOAST_SLIDE_MS = 300;
 
 export function OnlineGameReadOnly({
   error,
@@ -78,6 +73,7 @@ export function OnlineGameReadOnly({
   onResolveClownGift,
   onResolveInfighting,
   onResolveInnocentVictimDiscard,
+  onResolveLoyalGuards,
   onReloadTestHand,
   onRequestUndo,
   onRespondToUndoRequest,
@@ -96,6 +92,10 @@ export function OnlineGameReadOnly({
   const previousViewRef = useRef<PlayerGameView | undefined>(undefined);
   const [flashingAction, setFlashingAction] = useState<OnlineActionFlashState | undefined>();
   const [scorePulse, setScorePulse] = useState<OnlineScorePulseState | undefined>();
+  const [activeToast, setActiveToast] = useState<OnlineToastState | undefined>();
+  const [toastQueue, setToastQueue] = useState<OnlineToastState[]>([]);
+  const toastQueueLengthRef = useRef(0);
+  const toastTimerIdsRef = useRef<number[]>([]);
   const displayedBackgroundNobleCountRef = useRef(clampBackgroundNobleCount(view.nobleLine.length || 12));
   const previousBackgroundTurnRef = useRef<{ currentPlayerId?: string; day: number; turnStep: string } | undefined>(undefined);
   const backgroundTransitionTimeoutRef = useRef<number[]>([]);
@@ -105,14 +105,19 @@ export function OnlineGameReadOnly({
   const wasViewerTurnRef = useRef(view.phase === "playing" && view.isViewerTurn);
   const currentPlayer = view.players.find((player) => player.id === view.currentPlayerId);
   const selectedDetailsPlayer = view.players.find((player) => player.id === selectedDetailsPlayerId);
-  const currentTurnActivity = view.isViewerTurn ? [] : getCurrentTurnActivity(view);
   const visibleHistoryLog = view.log.filter((entry) => !isTestHandReloadMessage(entry.message));
   const pendingScorePulse = scorePulse ? undefined : getPendingOpponentScorePulse(view, previousViewRef.current);
   const displayedScorePulse = scorePulse ?? pendingScorePulse;
   const canTakeFrontNoble =
     view.phase === "playing" && view.isViewerTurn && view.turnStep !== "turnComplete" && view.nobleLine.length > 0 && !isBusy;
   const rushJobBlocksViewer = Boolean(view.viewer?.skipActionThisTurn || view.viewer?.skipNextActionTurn);
-  const canPlayAction = view.phase === "playing" && view.isViewerTurn && view.turnStep === "playActionOptional" && !rushJobBlocksViewer && !isBusy;
+  const canPlayAction =
+    view.phase === "playing" &&
+    view.isViewerTurn &&
+    view.turnStep === "playActionOptional" &&
+    !view.pendingChoice &&
+    !rushJobBlocksViewer &&
+    !isBusy;
   const selectedAction = view.viewer?.hand.find((action) => action.instanceId === selectedActionId);
   const isReorderAction = selectedAction?.card.effectKey === "opinionatedGuards";
   const selectedActionTargets = selectedAction ? view.viewer?.validActionTargetsByCardId[selectedAction.instanceId] ?? [] : [];
@@ -298,6 +303,57 @@ export function OnlineGameReadOnly({
     setReorderDraftIds((currentIds) => (haveSameIds(currentIds, legalReorderIds) ? currentIds : legalReorderIds));
   }, [isReorderAction, legalReorderIds.join("|")]);
 
+  useEffect(() => {
+    toastQueueLengthRef.current = toastQueue.length;
+  }, [toastQueue.length]);
+
+  useEffect(() => {
+    if (activeToast || toastQueue.length === 0) {
+      return;
+    }
+
+    const [nextToast, ...remainingToasts] = toastQueue;
+
+    if (!nextToast) {
+      return;
+    }
+
+    setToastQueue(remainingToasts);
+    setActiveToast(nextToast);
+
+    const showTimeoutId = window.setTimeout(() => {
+      setActiveToast((currentToast) => (currentToast?.id === nextToast.id ? { ...currentToast, isVisible: true } : currentToast));
+    }, 30);
+    let clearTimeoutId: number | undefined;
+    let maxHideTimeoutId: number | undefined;
+
+    function hideAndClearToast() {
+      setActiveToast((currentToast) => (currentToast?.id === nextToast.id ? { ...currentToast, isVisible: false } : currentToast));
+      clearTimeoutId = window.setTimeout(() => {
+        setActiveToast((currentToast) => (currentToast?.id === nextToast.id ? undefined : currentToast));
+      }, ONLINE_TOAST_SLIDE_MS + 80);
+      toastTimerIdsRef.current.push(clearTimeoutId);
+    }
+
+    const minHideTimeoutId = window.setTimeout(() => {
+      if (toastQueueLengthRef.current > 0) {
+        hideAndClearToast();
+      } else {
+        maxHideTimeoutId = window.setTimeout(hideAndClearToast, ONLINE_TOAST_MAX_VISIBLE_MS - ONLINE_TOAST_MIN_VISIBLE_MS);
+        toastTimerIdsRef.current.push(maxHideTimeoutId);
+      }
+    }, ONLINE_TOAST_MIN_VISIBLE_MS);
+
+    toastTimerIdsRef.current.push(showTimeoutId, minHideTimeoutId);
+  }, [activeToast, toastQueue.length]);
+
+  useEffect(() => {
+    return () => {
+      toastTimerIdsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      toastTimerIdsRef.current = [];
+    };
+  }, []);
+
   useLayoutEffect(() => {
     const previousView = previousViewRef.current;
 
@@ -306,9 +362,22 @@ export function OnlineGameReadOnly({
       return;
     }
 
+    const newEntries = view.log.filter((entry) => !previousView.log.some((previousEntry) => previousEntry.id === entry.id));
+    const newSpectatorToasts = newEntries
+      .filter((entry) => shouldShowOnlineToastForEntry(entry, view.viewerPlayerId))
+      .reverse()
+      .map((entry) => ({
+        id: `${entry.id}-toast`,
+        isVisible: false,
+        message: formatOnlineToastMessage(entry.message),
+      }));
+
+    if (newSpectatorToasts.length > 0) {
+      setToastQueue((currentQueue) => [...currentQueue, ...newSpectatorToasts]);
+    }
+
     if (!view.isViewerTurn && view.currentPlayerId) {
       const actingPlayerId = view.currentPlayerId;
-      const newEntries = view.log.filter((entry) => !previousView.log.some((previousEntry) => previousEntry.id === entry.id));
 
       for (const entry of newEntries) {
         if (entry.playerId !== actingPlayerId) {
@@ -443,6 +512,11 @@ export function OnlineGameReadOnly({
 
   return (
     <div className="flex flex-col gap-4">
+      {room?.roomName ? (
+        <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 text-center text-3xl font-bold text-stone-950">
+          {room.roomName}
+        </div>
+      ) : null}
       {room?.undoRequest && room.undoRequest.requesterId !== view.viewerPlayerId ? (
         <div className="fixed inset-0 z-[95] flex items-center justify-center bg-stone-950/35 p-4">
           <div className="max-w-md rounded-lg border border-amber-300 bg-white/80 p-5 text-center shadow-xl backdrop-blur-sm">
@@ -522,6 +596,15 @@ export function OnlineGameReadOnly({
           playerName={view.viewer?.name ?? "You"}
         />
       ) : null}
+      {view.pendingChoice?.type === "loyalGuards" && view.pendingChoice.targetPlayerId === view.viewerPlayerId ? (
+        <OnlineLoyalGuardsChoice
+          actionName={view.pendingChoice.source.type === "action" ? view.pendingChoice.source.actionCard.card.name : "The Clown"}
+          isBusy={isBusy}
+          originalPlayerName={getPlayerName(view, view.pendingChoice.originalPlayerId)}
+          playerName={view.viewer?.name ?? "You"}
+          onConfirm={onResolveLoyalGuards}
+        />
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.6fr)]">
         <Card className="min-h-[13rem]">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -541,20 +624,6 @@ export function OnlineGameReadOnly({
             ) : null}
             {error ? <p className="text-sm font-medium text-red-800">{error}</p> : null}
           </div>
-          {!view.isViewerTurn ? (
-            <div className="mt-4 rounded-lg border border-stone-300 bg-white/25 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-stone-600">Turn Updates</p>
-              {currentTurnActivity.length > 0 ? (
-                <ul className="mt-2 space-y-1 text-sm text-stone-800">
-                  {currentTurnActivity.map((entry) => (
-                    <li key={entry.id}>{entry.message}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-2 text-sm text-stone-600">No actions yet this turn.</p>
-              )}
-            </div>
-          ) : null}
         </Card>
 
         <Card className="min-h-[13rem]">
@@ -956,6 +1025,7 @@ export function OnlineGameReadOnly({
       </div>
 
       <ActionDiscardPile cards={view.actionDeck.discardPile} onPreviewCard={setPreviewCard} />
+      {activeToast ? <OnlineBottomToast toast={activeToast} /> : null}
       <OnlinePlayerDetailsModal
         canDiscardCallousGuards={Boolean(selectedDetailsPlayer && selectedDetailsPlayer.id === view.viewerPlayerId)}
         isBusy={isBusy}
@@ -995,6 +1065,22 @@ function OnlineActionFlash({ flash }: { flash: OnlineActionFlashState }) {
           <p className="mt-1 text-[10px] text-stone-700">{flash.card.description}</p>
         </div>
       </CardImage>
+    </div>
+  );
+}
+
+function OnlineBottomToast({ toast }: { toast: OnlineToastState }) {
+  return (
+    <div
+      className="pointer-events-none fixed bottom-0 left-1/2 z-[85] w-[min(42rem,calc(100vw-2rem))] -translate-x-1/2 transition-transform duration-300 ease-out"
+      style={{
+        transform: `translateX(-50%) translateY(${toast.isVisible ? "0" : "105%"})`,
+        transitionDuration: `${ONLINE_TOAST_SLIDE_MS}ms`,
+      }}
+    >
+      <div className="rounded-t-xl border border-amber-300 bg-stone-950/88 px-4 py-3 text-center text-sm font-semibold text-amber-50 shadow-2xl backdrop-blur-md">
+        {toast.message}
+      </div>
     </div>
   );
 }
@@ -1203,6 +1289,52 @@ function OnlineInfightingChoice({
   );
 }
 
+function OnlineLoyalGuardsChoice({
+  actionName,
+  isBusy,
+  originalPlayerName,
+  playerName,
+  onConfirm,
+}: {
+  actionName: string;
+  isBusy: boolean;
+  originalPlayerName: string;
+  playerName: string;
+  onConfirm: (useProtection: boolean) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-stone-950/45 p-4">
+      <div className="max-w-md rounded-lg border border-amber-300 bg-white/80 p-5 text-center shadow-xl backdrop-blur-md">
+        <h3 className="text-lg font-semibold">Loyal Guards</h3>
+        <p className="mt-2 text-sm text-stone-700">
+          {playerName}, {originalPlayerName} used {actionName} against you. Use Loyal Guards to block it?
+        </p>
+        <p className="mt-2 text-xs text-stone-600">
+          Loyal Guards will be discarded either way. If you block, the effect backfires when possible.
+        </p>
+        <div className="mt-4 flex justify-center gap-2">
+          <button
+            className="rounded-md border border-amber-500 bg-amber-100/80 px-3 py-2 text-sm font-semibold text-amber-950 disabled:opacity-50"
+            disabled={isBusy}
+            onClick={() => onConfirm(true)}
+            type="button"
+          >
+            Use Loyal Guards
+          </button>
+          <button
+            className="rounded-md border border-stone-300 bg-white/70 px-3 py-2 text-sm font-semibold text-stone-900 disabled:opacity-50"
+            disabled={isBusy}
+            onClick={() => onConfirm(false)}
+            type="button"
+          >
+            Let It Happen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OnlineClericalErrorReturnChoice({
   excludedNobleInstanceId,
   isBusy,
@@ -1368,22 +1500,7 @@ function InFrontActionChip({
   );
 }
 
-function OnlineNobleLine({
-  isBusy,
-  isReorderMode,
-  legalReorderIds,
-  movementTargets,
-  nobles,
-  onPlayAction,
-  onPreviewCard,
-  onReorderDraftChange,
-  onSelectNobleTarget,
-  reorderDraftIds,
-  selectedAction,
-  selectedLandingTargets,
-  selectedNobleTargetId,
-  targetChoicesByNobleId,
-}: {
+type OnlineNobleLineProps = {
   isBusy: boolean;
   isReorderMode: boolean;
   legalReorderIds: CardInstanceId[];
@@ -1398,11 +1515,24 @@ function OnlineNobleLine({
   selectedLandingTargets: OnlineActionTargetChoice[];
   selectedNobleTargetId?: CardInstanceId;
   targetChoicesByNobleId: Map<CardInstanceId, OnlineActionTargetChoice[]>;
-}) {
-  const cardRefs = useRef(new Map<CardInstanceId, HTMLDivElement>());
-  const previousRectsRef = useRef(new Map<CardInstanceId, DOMRect>());
-  const [lineClones, setLineClones] = useState<OnlineLineCloneState[]>([]);
-  const [hiddenLineAnimationIds, setHiddenLineAnimationIds] = useState<CardInstanceId[]>([]);
+};
+
+const OnlineNobleLine = memo(function OnlineNobleLineComponent({
+  isBusy,
+  isReorderMode,
+  legalReorderIds,
+  movementTargets,
+  nobles,
+  onPlayAction,
+  onPreviewCard,
+  onReorderDraftChange,
+  onSelectNobleTarget,
+  reorderDraftIds,
+  selectedAction,
+  selectedLandingTargets,
+  selectedNobleTargetId,
+  targetChoicesByNobleId,
+}: OnlineNobleLineProps) {
   const [dragState, setDragState] = useState<{
     currentX: number;
     instanceId: CardInstanceId;
@@ -1431,131 +1561,36 @@ function OnlineNobleLine({
     }
   }, [isReorderMode]);
 
-  useLayoutEffect(() => {
-    const nextRects = new Map<CardInstanceId, DOMRect>();
-    const nextClones: OnlineLineCloneState[] = [];
-
-    cardRefs.current.forEach((element, instanceId) => {
-      const nextRect = element.getBoundingClientRect();
-      const previousRect = previousRectsRef.current.get(instanceId);
-      nextRects.set(instanceId, nextRect);
-
-      if (!previousRect || dragState?.instanceId === instanceId) {
-        return;
-      }
-
-      const x = previousRect.left - nextRect.left;
-
-      if (Math.abs(x) > 1) {
-        const noble = displayedNobles.find((candidate) => candidate.instanceId === instanceId);
-
-        if (!noble) {
-          return;
-        }
-
-        nextClones.push({
-          colorCategory: noble.card.colorCategory,
-          height: previousRect.height,
-          id: instanceId,
-          imagePath: noble.card.imagePath,
-          isActive: false,
-          left: previousRect.left,
-          name: noble.card.name,
-          top: previousRect.top,
-          width: previousRect.width,
-          x: nextRect.left - previousRect.left,
-          y: nextRect.top - previousRect.top,
-        });
-      }
-    });
-
-    previousRectsRef.current = nextRects;
-
-    if (nextClones.length > 0) {
-      const cloneIds = nextClones.map((clone) => clone.id);
-      setHiddenLineAnimationIds(cloneIds);
-      setLineClones(nextClones);
-      window.requestAnimationFrame(() => {
-        setLineClones((currentClones) =>
-          currentClones.map((clone) => (cloneIds.includes(clone.id) ? { ...clone, isActive: true } : clone)),
-        );
-      });
-      window.setTimeout(() => {
-        setLineClones((currentClones) => currentClones.filter((clone) => !cloneIds.includes(clone.id)));
-        setHiddenLineAnimationIds((currentIds) => currentIds.filter((instanceId) => !cloneIds.includes(instanceId)));
-      }, ONLINE_LINE_MOVE_DURATION_MS + 40);
-    }
-  }, [displayedNobles, dragState?.instanceId]);
-
   return (
-    <>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-12">
-        {displayedNobles.map((noble, index) => (
-          <OnlineNobleLineCard
-            dragState={dragState}
-            hiddenForLineAnimation={hiddenLineAnimationIds.includes(noble.instanceId)}
-            index={index}
-            isBusy={isBusy}
-            isMovementTarget={movementTargetIds.has(noble.instanceId)}
-            isReorderMode={isReorderMode}
-            landingTarget={landingTargetByPosition.get(index + 1)}
-            key={noble.instanceId}
-            legalReorderIds={legalReorderIds}
-            noble={noble}
-            reorderDraftIds={reorderDraftIds}
-            selectedAction={selectedAction}
-            selectedNobleTargetId={selectedNobleTargetId}
-            targetChoices={targetChoicesByNobleId.get(noble.instanceId) ?? []}
-            onCardElementChange={(element) => {
-              if (element) {
-                cardRefs.current.set(noble.instanceId, element);
-              } else {
-                cardRefs.current.delete(noble.instanceId);
-              }
-            }}
-            onDragStateChange={setDragState}
-            onPlayAction={onPlayAction}
-            onPreviewCard={onPreviewCard}
-            onReorderDraftChange={onReorderDraftChange}
-            onSelectNobleTarget={onSelectNobleTarget}
-          />
-        ))}
-      </div>
-      {lineClones.map((clone) => (
-        <OnlineLineMoveClone clone={clone} key={clone.id} />
+    <div className="mt-3 grid gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-12">
+      {displayedNobles.map((noble, index) => (
+        <OnlineNobleLineCard
+          dragState={dragState}
+          index={index}
+          isBusy={isBusy}
+          isMovementTarget={movementTargetIds.has(noble.instanceId)}
+          isReorderMode={isReorderMode}
+          landingTarget={landingTargetByPosition.get(index + 1)}
+          key={noble.instanceId}
+          legalReorderIds={legalReorderIds}
+          noble={noble}
+          reorderDraftIds={reorderDraftIds}
+          selectedAction={selectedAction}
+          selectedNobleTargetId={selectedNobleTargetId}
+          targetChoices={targetChoicesByNobleId.get(noble.instanceId) ?? []}
+          onDragStateChange={setDragState}
+          onPlayAction={onPlayAction}
+          onPreviewCard={onPreviewCard}
+          onReorderDraftChange={onReorderDraftChange}
+          onSelectNobleTarget={onSelectNobleTarget}
+        />
       ))}
-    </>
-  );
-}
-
-function OnlineLineMoveClone({ clone }: { clone: OnlineLineCloneState }) {
-  return (
-    <div
-      className={`pointer-events-none fixed z-[70] rounded-md border p-2 text-left shadow-sm transition-transform ${getNobleColorStyle(clone.colorCategory)}`}
-      style={{
-        height: clone.height,
-        left: clone.left,
-        top: clone.top,
-        transform: clone.isActive ? `translate(${clone.x}px, ${clone.y}px)` : "translate(0, 0)",
-        transitionDuration: `${ONLINE_LINE_MOVE_DURATION_MS}ms`,
-        transitionTimingFunction: "cubic-bezier(0.2, 0, 0.2, 1)",
-        width: clone.width,
-      }}
-    >
-      <CardImage
-        alt={clone.name}
-        imageClassName="aspect-[5/7] border border-stone-200 object-cover shadow-sm"
-        imagePath={clone.imagePath}
-      >
-        <div className="rounded bg-white/60 p-1 text-xs font-semibold leading-tight">{clone.name}</div>
-      </CardImage>
     </div>
   );
-}
+}, areOnlineNobleLinePropsEqual);
 
 function OnlineNobleLineCard({
   dragState,
-  hiddenForLineAnimation,
   index,
   isBusy,
   isMovementTarget,
@@ -1571,7 +1606,6 @@ function OnlineNobleLineCard({
   selectedAction,
   selectedNobleTargetId,
   targetChoices,
-  onCardElementChange,
   onDragStateChange,
 }: {
   dragState?: {
@@ -1580,7 +1614,6 @@ function OnlineNobleLineCard({
     slotWidth: number;
     startX: number;
   };
-  hiddenForLineAnimation: boolean;
   index: number;
   isBusy: boolean;
   isMovementTarget: boolean;
@@ -1596,7 +1629,6 @@ function OnlineNobleLineCard({
   selectedAction?: CardInstance<ActionCard>;
   selectedNobleTargetId?: CardInstanceId;
   targetChoices: OnlineActionTargetChoice[];
-  onCardElementChange: (element: HTMLDivElement | null) => void;
   onDragStateChange: (dragState: {
     currentX: number;
     instanceId: CardInstanceId;
@@ -1645,9 +1677,8 @@ function OnlineNobleLineCard({
         canPreview ? "cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400" : ""
       } ${
         isReorderTarget ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""
-      } ${hiddenForLineAnimation ? "opacity-0" : ""} ${colorStyle}`}
+      } ${colorStyle}`}
       data-online-noble-id={noble.instanceId}
-      ref={onCardElementChange}
       role={isWholeCardClickable ? "button" : undefined}
       tabIndex={isWholeCardClickable ? 0 : undefined}
       onClick={() => {
@@ -2203,6 +2234,53 @@ function findVisibleActionCardByName(view: PlayerGameView, actionName: string): 
   }
 
   return actionDefinitions.find((card) => normalizeCardName(card.name) === normalizedName);
+}
+
+function shouldShowOnlineToastForEntry(entry: PlayerGameView["log"][number], viewerPlayerId: string): boolean {
+  return Boolean(
+    entry.playerId &&
+      entry.playerId !== viewerPlayerId &&
+      !isTestHandReloadMessage(entry.message) &&
+      isTurnActivityMessage(entry.message),
+  );
+}
+
+function areOnlineNobleLinePropsEqual(
+  previous: OnlineNobleLineProps,
+  next: OnlineNobleLineProps,
+) {
+  return (
+    previous.isBusy === next.isBusy &&
+    previous.isReorderMode === next.isReorderMode &&
+    previous.selectedAction?.instanceId === next.selectedAction?.instanceId &&
+    previous.selectedNobleTargetId === next.selectedNobleTargetId &&
+    getNobleInstanceKey(previous.nobles) === getNobleInstanceKey(next.nobles) &&
+    previous.legalReorderIds.join("|") === next.legalReorderIds.join("|") &&
+    previous.reorderDraftIds.join("|") === next.reorderDraftIds.join("|") &&
+    getOnlineTargetChoiceKey(previous.movementTargets) === getOnlineTargetChoiceKey(next.movementTargets) &&
+    getOnlineTargetChoiceKey(previous.selectedLandingTargets) === getOnlineTargetChoiceKey(next.selectedLandingTargets) &&
+    getTargetChoicesMapKey(previous.targetChoicesByNobleId) === getTargetChoicesMapKey(next.targetChoicesByNobleId)
+  );
+}
+
+function getNobleInstanceKey(nobles: CardInstance<NobleCard>[]) {
+  return nobles.map((noble) => noble.instanceId).join("|");
+}
+
+function getOnlineTargetChoiceKey(choices: OnlineActionTargetChoice[]) {
+  return choices
+    .map((choice) => `${choice.label}:${choice.toPosition ?? ""}:${JSON.stringify(choice.target)}`)
+    .join("|");
+}
+
+function getTargetChoicesMapKey(choicesByNobleId: Map<CardInstanceId, OnlineActionTargetChoice[]>) {
+  return Array.from(choicesByNobleId.entries())
+    .map(([instanceId, choices]) => `${instanceId}=${getOnlineTargetChoiceKey(choices)}`)
+    .join(";");
+}
+
+function formatOnlineToastMessage(message: string): string {
+  return message;
 }
 
 function normalizeCardName(name: string): string {

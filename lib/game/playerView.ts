@@ -150,6 +150,7 @@ function getViewerActionTargets(
   if (
     state.phase !== "playing" ||
     state.passScreen.visible ||
+    state.pendingChoice ||
     state.turnStep !== "playActionOptional" ||
     currentPlayer?.id !== playerId ||
     currentPlayer.skipActionThisTurn ||

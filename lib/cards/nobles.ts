@@ -19,6 +19,7 @@ const nobleDefinitionData: CardDefinition<NobleCard>[] = [
   { id: "governor", kind: "noble", name: "Governor", colorCategory: "green", points: 4, group: "civic", quantity: 1 },
   { id: "heretic", kind: "noble", name: "Heretic", colorCategory: "blue", points: 2, group: "church", quantity: 1 },
   { id: "hero-of-the-people", kind: "noble", name: "Hero of the People", colorCategory: "gray", points: -3, group: "gray", quantity: 1 },
+  { id: "heroine-of-the-people", kind: "noble", name: "Heroine of the People", colorCategory: "gray", points: -3, group: "gray", quantity: 1 },
   { id: "innocent-victim", kind: "noble", name: "Innocent Victim", colorCategory: "gray", points: -1, group: "gray", quantity: 1 },
   { id: "king-louis-xvi", kind: "noble", name: "King Louis XVI", colorCategory: "purple", points: 5, group: "royal", quantity: 1 },
   { id: "lady", kind: "noble", name: "Lady", colorCategory: "purple", points: 2, group: "royal", quantity: 1 },
@@ -62,8 +63,16 @@ const nobleDefinitionData: CardDefinition<NobleCard>[] = [
 
 export const nobleDefinitions: CardDefinition<NobleCard>[] = nobleDefinitionData.map((card) => ({
   ...card,
-  imagePath: `/cards/nobles/${card.id}.jpg`,
+  imagePath: `/cards/nobles/${getNobleImageFileName(card.id)}`,
 }));
 
-export const NOBLE_DECK_SIZE = 50;
+export const NOBLE_DECK_SIZE = 51;
+
+function getNobleImageFileName(id: string) {
+  if (id === "heroine-of-the-people") {
+    return "heroine-of-the-people.png";
+  }
+
+  return `${id}.jpg`;
+}
 

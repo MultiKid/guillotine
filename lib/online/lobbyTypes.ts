@@ -9,6 +9,7 @@ export type OnlineRoomPlayer = {
 
 export type OnlineRoomSnapshot = {
   roomCode: string;
+  roomName: string;
   players: OnlineRoomPlayer[];
   hostPlayerId: string;
   status: "lobby" | "started";

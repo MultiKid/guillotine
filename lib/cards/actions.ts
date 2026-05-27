@@ -215,6 +215,10 @@ const implementedActions: Record<string, { effectKey: ActionEffectKey; descripti
     effectKey: "lackOfSupport",
     description: "Choose a player. Look at that player's hand, choose an action card, and discard it.",
   },
+  "Loyal Guards": {
+    effectKey: "loyalGuards",
+    description: "Put this card in front of you. The next action played against you will be cancelled if you choose. This card will then be discarded either way.",
+  },
 };
 
 const actionNames = [
@@ -245,6 +249,7 @@ const actionNames = [
   "L'Idiot",
   "Lack of Faith",
   "Lack of Support",
+  "Loyal Guards",
   "Late Arrival",
   "Let Them Eat Cake",
   "Majesty",
@@ -285,7 +290,7 @@ export const actionDefinitions: CardDefinition<ActionCard>[] = actionNames.map((
   };
 });
 
-export const ACTION_DECK_SIZE = 60;
+export const ACTION_DECK_SIZE = 61;
 
 function toCardId(name: string): string {
   return name
@@ -302,6 +307,10 @@ function getActionImageFileName(name: string, id: string): string {
 
   if (name === "L'Idiot") {
     return "l_idiot.jpg";
+  }
+
+  if (name === "Loyal Guards") {
+    return "loyal-guards.png";
   }
 
   return `${id}.jpg`;

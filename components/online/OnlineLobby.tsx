@@ -27,6 +27,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
   const [socketReady, setSocketReady] = useState(false);
   const [connectionError, setConnectionError] = useState<string | undefined>();
   const [playerName, setPlayerName] = useState("Player");
+  const [roomName, setRoomName] = useState("Private Guillotine Room");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [room, setRoom] = useState<OnlineRoomSnapshot | undefined>();
   const [playerId, setPlayerId] = useState<string | undefined>();
@@ -63,19 +64,31 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         const savedRoom = loadSavedOnlineRoom();
 
         if (savedRoom) {
-          setPlayerName(savedRoom.playerName);
-          setRoomCodeInput(savedRoom.roomCode);
           socket.emit(
-            "room:rejoin",
+            "room:lookup",
             {
               roomCode: savedRoom.roomCode,
-              playerName: savedRoom.playerName,
             },
             (response) => {
-              const lobbyResponse = response as LobbyResponse;
+              const lookupResponse = response as { ok?: boolean; room?: OnlineRoomSnapshot };
 
-              if (lobbyResponse?.ok) {
-                handleLobbyResponse(lobbyResponse);
+              if (lookupResponse?.ok) {
+                setPlayerName(savedRoom.playerName);
+                setRoomCodeInput(savedRoom.roomCode);
+                socket?.emit(
+                  "room:rejoin",
+                  {
+                    roomCode: savedRoom.roomCode,
+                    playerName: savedRoom.playerName,
+                  },
+                  (rejoinResponse) => {
+                    const lobbyResponse = rejoinResponse as LobbyResponse;
+
+                    if (lobbyResponse?.ok) {
+                      handleLobbyResponse(lobbyResponse);
+                    }
+                  },
+                );
               }
             },
           );
@@ -155,7 +168,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
   function createRoom() {
     setIsBusy(true);
     setError(undefined);
-    socketRef.current?.emit("room:create", { playerName }, handleLobbyResponse);
+    socketRef.current?.emit("room:create", { playerName, roomName }, handleLobbyResponse);
   }
 
   function joinRoom() {
@@ -214,6 +227,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         onResolveClownGift={resolveClownGift}
         onResolveInfighting={resolveInfighting}
         onResolveInnocentVictimDiscard={resolveInnocentVictimDiscard}
+        onResolveLoyalGuards={resolveLoyalGuards}
         onReloadTestHand={reloadTestHand}
         onRequestUndo={requestUndo}
         onRespondToUndoRequest={respondToUndoRequest}
@@ -227,10 +241,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold">Online Lobby</h2>
-            <p className="mt-1 text-sm text-stone-700">
-              Create a private room, or enter a room code to join friends and family.
-            </p>
+            <h2 className="text-xl font-bold">{room?.roomName ?? roomName}</h2>
           </div>
           <Button onClick={onBackToHome}>Back</Button>
         </div>
@@ -243,7 +254,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
         {!room ? (
           <div className="grid gap-4">
-            <div className="grid gap-3 rounded-lg border border-stone-300 bg-white/30 p-4 backdrop-blur-sm md:grid-cols-[1fr_12rem_auto_auto] md:items-end">
+            <div className="grid gap-3 rounded-lg border border-stone-300 bg-white/30 p-4 backdrop-blur-sm md:grid-cols-[1fr_1fr_12rem] md:items-start">
               <label className="grid gap-1 text-sm font-medium text-stone-700">
                 Player Name
                 <input
@@ -253,30 +264,42 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
                   onChange={(event) => setPlayerName(event.target.value)}
                 />
               </label>
-              <label className="grid gap-1 text-sm font-medium text-stone-700">
-                Room Code
-                <input
-                  className="rounded-md border border-stone-300 bg-white/55 px-3 py-2 uppercase tracking-[0.2em] text-stone-950 outline-none focus:border-stone-500"
-                  maxLength={5}
-                  value={roomCodeInput}
-                  onChange={(event) => setRoomCodeInput(event.target.value.toUpperCase())}
-                />
-              </label>
+              <div className="grid gap-2">
+                <label className="grid gap-1 text-sm font-medium text-stone-700">
+                  Room Name
+                  <input
+                    className="rounded-md border border-stone-300 bg-white/55 px-3 py-2 text-stone-950 outline-none focus:border-stone-500"
+                    maxLength={36}
+                    value={roomName}
+                    onChange={(event) => setRoomName(event.target.value)}
+                  />
+                </label>
+                <Button
+                  disabled={!socketReady || isBusy || playerName.trim().length === 0}
+                  onClick={createRoom}
+                >
+                  {isBusy ? "Creating..." : "Create Room"}
+                </Button>
+              </div>
+              <div className="grid gap-2">
+                <label className="grid gap-1 text-sm font-medium text-stone-700">
+                  Room Code
+                  <input
+                    className="rounded-md border border-stone-300 bg-white/55 px-3 py-2 uppercase tracking-[0.2em] text-stone-950 outline-none focus:border-stone-500"
+                    maxLength={5}
+                    value={roomCodeInput}
+                    onChange={(event) => setRoomCodeInput(event.target.value.toUpperCase())}
+                  />
+                </label>
+                <Button
+                  disabled={!socketReady || isBusy || playerName.trim().length === 0 || roomCodeInput.trim().length === 0}
+                  onClick={joinRoom}
+                >
+                  {isBusy ? "Joining..." : "Join Room"}
+                </Button>
+              </div>
 
-              {error ? <p className="text-sm font-medium text-red-800">{error}</p> : null}
-
-              <Button
-                disabled={!socketReady || isBusy || playerName.trim().length === 0}
-                onClick={createRoom}
-              >
-                {isBusy ? "Creating..." : "Create Room"}
-              </Button>
-              <Button
-                disabled={!socketReady || isBusy || playerName.trim().length === 0 || roomCodeInput.trim().length === 0}
-                onClick={joinRoom}
-              >
-                {isBusy ? "Joining..." : "Join Room"}
-              </Button>
+              {error ? <p className="text-sm font-medium text-red-800 md:col-span-3">{error}</p> : null}
             </div>
           </div>
         ) : (
@@ -666,6 +689,37 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
         if (!commandResponse?.ok) {
           setError(commandResponse?.error ?? "Could not resolve Innocent Victim.");
+          setIsBusy(false);
+          return;
+        }
+
+        if (commandResponse.gameView) {
+          setGameView(commandResponse.gameView);
+          setIsBusy(false);
+        }
+      },
+    );
+  }
+
+  function resolveLoyalGuards(useProtection: boolean) {
+    if (!room || !playerId) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(undefined);
+    socketRef.current?.emit(
+      "game:resolve-loyal-guards",
+      {
+        roomCode: room.roomCode,
+        playerId,
+        useProtection,
+      },
+      (response) => {
+        const commandResponse = response as { ok?: boolean; error?: string; gameView?: PlayerGameView };
+
+        if (!commandResponse?.ok) {
+          setError(commandResponse?.error ?? "Could not resolve Loyal Guards.");
           setIsBusy(false);
           return;
         }

@@ -405,6 +405,10 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
     dispatch({ type: "RESOLVE_CLOWN_GIFT", playerId, targetPlayerId });
   }
 
+  function resolveLoyalGuards(playerId: string, useProtection: boolean) {
+    dispatch({ type: "RESOLVE_LOYAL_GUARDS", playerId, useProtection });
+  }
+
   function readyForTurn(inputMethod?: "keyboard" | "pointer") {
     if (inputMethod === "keyboard") {
       enterKeyArmed.current = false;
@@ -529,6 +533,7 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
         onResolveClericalErrorReturn={resolveClericalErrorReturn}
         onResolveInnocentVictimDiscard={resolveInnocentVictimDiscard}
         onResolveClownGift={resolveClownGift}
+        onResolveLoyalGuards={resolveLoyalGuards}
       />
     );
   }

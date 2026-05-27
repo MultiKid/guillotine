@@ -85,6 +85,7 @@ export type ActionEffectKey =
   | "infighting"
   | "clericalError"
   | "lackOfSupport"
+  | "loyalGuards"
   | "moveFrontNobleBackOne"
   | "moveBackNobleForwardOne"
   | "swapFirstTwoNobles"
@@ -164,6 +165,25 @@ export type PendingPrivateChoice =
       clownInstanceId: CardInstanceId;
       returnToPassScreen: boolean;
       advanceTurnAfterChoice: boolean;
+    }
+  | {
+      type: "loyalGuards";
+      originalPlayerId: PlayerId;
+      targetPlayerId: PlayerId;
+      loyalGuardsInstanceId: CardInstanceId;
+      source:
+        | {
+            type: "action";
+            actionCard: CardInstance<ActionCard>;
+            effectKey: ActionEffectKey;
+            originalTarget?: ActionTarget;
+          }
+        | {
+            type: "clownGift";
+            clownInstanceId: CardInstanceId;
+            returnToPassScreen: boolean;
+            advanceTurnAfterChoice: boolean;
+          };
     };
 
 export interface GameSnapshot {
@@ -217,6 +237,7 @@ export type GameCommand =
   | { type: "RESOLVE_CLERICAL_ERROR_RETURN"; playerId: PlayerId; nobleId?: CardInstanceId }
   | { type: "RESOLVE_INNOCENT_VICTIM_DISCARD"; playerId: PlayerId; cardId?: CardInstanceId }
   | { type: "RESOLVE_CLOWN_GIFT"; playerId: PlayerId; targetPlayerId: PlayerId }
+  | { type: "RESOLVE_LOYAL_GUARDS"; playerId: PlayerId; useProtection: boolean }
   | {
       type: "PLAY_ACTION_CARD";
       playerId: PlayerId;

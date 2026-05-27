@@ -67,6 +67,10 @@ function validateOnlineCommand(state: GameState, command: GameCommand): string |
       return "The game is not currently playing.";
     }
 
+    if (state.pendingChoice) {
+      return "Resolve the pending choice before playing another action.";
+    }
+
     if (!currentPlayer || currentPlayer.id !== command.playerId) {
       return "It is not your turn.";
     }
@@ -85,6 +89,10 @@ function validateOnlineCommand(state: GameState, command: GameCommand): string |
 
     if (state.phase !== "playing") {
       return "The game is not currently playing.";
+    }
+
+    if (state.pendingChoice) {
+      return "Resolve the pending choice before playing another action.";
     }
 
     if (!currentPlayer || currentPlayer.id !== command.playerId) {
@@ -117,6 +125,10 @@ function validateOnlineCommand(state: GameState, command: GameCommand): string |
       return "The game is not currently playing.";
     }
 
+    if (state.pendingChoice) {
+      return "Resolve the pending choice before playing another action.";
+    }
+
     if (!currentPlayer || currentPlayer.id !== command.playerId) {
       return "It is not your turn.";
     }
@@ -131,6 +143,10 @@ function validateOnlineCommand(state: GameState, command: GameCommand): string |
 
     if (state.phase !== "playing") {
       return "The game is not currently playing.";
+    }
+
+    if (state.pendingChoice) {
+      return "Resolve the pending choice before playing another action.";
     }
 
     if (!currentPlayer || currentPlayer.id !== command.playerId) {
@@ -229,6 +245,18 @@ function validateOnlineCommand(state: GameState, command: GameCommand): string |
 
     if (!state.players.some((player) => player.id === command.targetPlayerId)) {
       return "Target player not found.";
+    }
+  }
+
+  if (command.type === "RESOLVE_LOYAL_GUARDS") {
+    const pending = state.pendingChoice;
+
+    if (state.phase !== "playing" || pending?.type !== "loyalGuards") {
+      return "There is no Loyal Guards choice to resolve.";
+    }
+
+    if (pending.targetPlayerId !== command.playerId) {
+      return "This Loyal Guards choice is not for you.";
     }
   }
 

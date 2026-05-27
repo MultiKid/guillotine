@@ -11,6 +11,7 @@ import { shuffleDeck } from "@/lib/game/deck";
 import { pushGameHistory, undoLastAction } from "@/lib/game/history";
 import { calculateNobleScoreValue, calculatePlayerScore } from "@/lib/game/scoring";
 import type {
+  ActionEffectKey,
   ActionTarget,
   ActionCard,
   CardInstance,
@@ -26,6 +27,17 @@ import type {
 type EndCurrentDayOptions = {
   nextTurnStep?: TurnStep;
   showPassScreen?: boolean;
+};
+
+type ReducerActionEffectResult = {
+  state: GameState;
+  applied: boolean;
+  message: string;
+  endsTurn?: boolean;
+  allowsAnotherAction?: boolean;
+  extraLogMessages?: string[];
+  extraDetailLogMessages?: string[];
+  skipDiscard?: boolean;
 };
 
 export function gameReducer(state: GameState, command: GameCommand): GameState {
@@ -51,6 +63,8 @@ export function gameReducer(state: GameState, command: GameCommand): GameState {
       return state.passScreen.visible ? state : resolveInnocentVictimDiscard(state, command.playerId, command.cardId);
     case "RESOLVE_CLOWN_GIFT":
       return state.passScreen.visible ? state : resolveClownGift(state, command.playerId, command.targetPlayerId);
+    case "RESOLVE_LOYAL_GUARDS":
+      return state.passScreen.visible ? state : resolveLoyalGuards(state, command.playerId, command.useProtection);
     case "UNDO_LAST_ACTION":
       return undoLastAction(state);
     case "PLAY_ACTION_CARD":
@@ -277,6 +291,29 @@ function resolveClownGift(state: GameState, playerId: PlayerId, targetPlayerId: 
     return state;
   }
 
+  const loyalGuards = findLoyalGuards(targetPlayer);
+
+  if (loyalGuards) {
+    return {
+      ...state,
+      pendingChoice: {
+        type: "loyalGuards",
+        originalPlayerId: playerId,
+        targetPlayerId,
+        loyalGuardsInstanceId: loyalGuards.instanceId,
+        source: {
+          type: "clownGift",
+          clownInstanceId: pending.clownInstanceId,
+          returnToPassScreen: pending.returnToPassScreen,
+          advanceTurnAfterChoice: pending.advanceTurnAfterChoice,
+        },
+      },
+      passScreen: {
+        visible: false,
+      },
+    };
+  }
+
   const nextCurrentPlayerIndex = pending.advanceTurnAfterChoice
     ? getNextPlayerIndex(state.currentPlayerIndex, state.players.length)
     : state.currentPlayerIndex;
@@ -340,6 +377,160 @@ function resolveClownGift(state: GameState, playerId: PlayerId, targetPlayerId: 
   }
 
   return resolvedState;
+}
+
+function resolveLoyalGuards(state: GameState, playerId: PlayerId, useProtection: boolean): GameState {
+  const pending = state.pendingChoice;
+
+  if (state.phase !== "playing" || pending?.type !== "loyalGuards" || pending.targetPlayerId !== playerId) {
+    return state;
+  }
+
+  const protectedPlayer = state.players.find((player) => player.id === pending.targetPlayerId);
+  const originalPlayer = state.players.find((player) => player.id === pending.originalPlayerId);
+  const loyalGuards = protectedPlayer?.inFrontActions.find((action) => action.instanceId === pending.loyalGuardsInstanceId);
+
+  if (!protectedPlayer || !originalPlayer || !loyalGuards) {
+    return {
+      ...state,
+      pendingChoice: undefined,
+    };
+  }
+
+  const stateWithoutLoyalGuards: GameState = {
+    ...state,
+    pendingChoice: undefined,
+    players: state.players.map((player) => {
+      if (player.id !== protectedPlayer.id) {
+        return player;
+      }
+
+      const updatedPlayer: Player = {
+        ...player,
+        inFrontActions: player.inFrontActions.filter((action) => action.instanceId !== loyalGuards.instanceId),
+      };
+
+      return {
+        ...updatedPlayer,
+        score: calculatePlayerScore(updatedPlayer),
+      };
+    }),
+    actionDeck: {
+      ...state.actionDeck,
+      discardPile: [loyalGuards, ...state.actionDeck.discardPile],
+    },
+  };
+
+  if (pending.source.type === "clownGift") {
+    const resolvedState = useProtection
+      ? stateWithoutLoyalGuards
+      : transferClownAfterLoyalGuards(stateWithoutLoyalGuards, pending.originalPlayerId, pending.targetPlayerId, pending.source.clownInstanceId);
+    const logEntry = createLogEntry(
+      resolvedState,
+      useProtection
+        ? `${protectedPlayer.name} used Loyal Guards and refused The Clown from ${originalPlayer.name}.`
+        : `${protectedPlayer.name} declined Loyal Guards and received The Clown from ${originalPlayer.name}.`,
+      protectedPlayer.id,
+      [protectedPlayer.id, originalPlayer.id],
+    );
+
+    return addBriefingEntries({
+      ...resolvedState,
+      currentPlayerIndex: pending.source.advanceTurnAfterChoice
+        ? getNextPlayerIndex(resolvedState.currentPlayerIndex, resolvedState.players.length)
+        : resolvedState.currentPlayerIndex,
+      turnStep: pending.source.advanceTurnAfterChoice ? "playActionOptional" : resolvedState.turnStep,
+      returningFromPrivateChoice: pending.source.returnToPassScreen,
+      passScreen: {
+        visible: pending.source.returnToPassScreen,
+      },
+      log: [logEntry, ...resolvedState.log],
+      detailedLog: [
+        createDetailedLogEntry(resolvedState, logEntry.message, protectedPlayer.id),
+        ...resolvedState.detailedLog,
+      ],
+    }, [logEntry], protectedPlayer.id);
+  }
+
+  const redirectedTarget = useProtection
+    ? getLoyalGuardsBackfireTarget(pending.source.effectKey, pending.source.originalTarget, pending.originalPlayerId)
+    : pending.source.originalTarget;
+  const protectedResult = useProtection
+    ? applyLoyalGuardsBackfire(stateWithoutLoyalGuards, pending.source.effectKey, pending.originalPlayerId, redirectedTarget, pending.source.actionCard)
+    : applyActionEffect(stateWithoutLoyalGuards, pending.source.effectKey, {
+        playerId: pending.originalPlayerId,
+        target: redirectedTarget,
+        actionCard: pending.source.actionCard,
+      });
+
+  if (!protectedResult.applied) {
+    const logEntry = createLogEntry(
+      stateWithoutLoyalGuards,
+      `${protectedPlayer.name} ${useProtection ? "used" : "declined"} Loyal Guards. ${originalPlayer.name}'s ${pending.source.actionCard.card.name} had no effect.`,
+      protectedPlayer.id,
+      [protectedPlayer.id, originalPlayer.id],
+    );
+
+    return addBriefingEntries({
+      ...stateWithoutLoyalGuards,
+      actionDeck: {
+        ...stateWithoutLoyalGuards.actionDeck,
+        discardPile: [pending.source.actionCard, ...stateWithoutLoyalGuards.actionDeck.discardPile],
+      },
+      turnStep: "takeNobleRequired",
+      log: [logEntry, ...stateWithoutLoyalGuards.log],
+      detailedLog: [createDetailedLogEntry(stateWithoutLoyalGuards, logEntry.message, protectedPlayer.id), ...stateWithoutLoyalGuards.detailedLog],
+    }, [logEntry], pending.originalPlayerId);
+  }
+
+  const logEntry = createLogEntry(
+    protectedResult.state,
+    useProtection
+      ? `${protectedPlayer.name} used Loyal Guards. ${originalPlayer.name}'s ${pending.source.actionCard.card.name} backfired: ${protectedResult.message}.`
+      : `${protectedPlayer.name} declined Loyal Guards. ${originalPlayer.name}'s ${pending.source.actionCard.card.name} resolved: ${protectedResult.message}.`,
+    pending.originalPlayerId,
+    [protectedPlayer.id, originalPlayer.id],
+  );
+  const stateWithDiscard: GameState = {
+    ...protectedResult.state,
+    actionDeck: {
+      ...protectedResult.state.actionDeck,
+      discardPile: protectedResult.skipDiscard
+        ? protectedResult.state.actionDeck.discardPile
+        : [pending.source.actionCard, ...protectedResult.state.actionDeck.discardPile],
+    },
+    turnStep: protectedResult.endsTurn
+      ? "turnComplete"
+      : protectedResult.allowsAnotherAction
+        ? "playActionOptional"
+        : "takeNobleRequired",
+    log: [
+      logEntry,
+      ...((protectedResult.extraLogMessages ?? []).map((message) => createLogEntry(protectedResult.state, message, pending.originalPlayerId, [protectedPlayer.id, originalPlayer.id]))),
+      ...protectedResult.state.log,
+    ],
+    detailedLog: [
+      createDetailedLogEntry(protectedResult.state, logEntry.message, pending.originalPlayerId),
+      ...((protectedResult.extraDetailLogMessages ?? protectedResult.extraLogMessages) ?? []).map((message) =>
+        createDetailedLogEntry(protectedResult.state, message, pending.originalPlayerId),
+      ),
+      ...protectedResult.state.detailedLog,
+    ],
+  };
+  const stateWithBriefings = addBriefingEntries(stateWithDiscard, [logEntry], pending.originalPlayerId);
+  const afterActionTriggers = applyAfterActionCardTriggers(stateWithBriefings);
+
+  return {
+    ...afterActionTriggers.state,
+    log: [
+      ...afterActionTriggers.logMessages.map((message) => createLogEntry(afterActionTriggers.state, message, pending.originalPlayerId)),
+      ...afterActionTriggers.state.log,
+    ],
+    detailedLog: [
+      ...afterActionTriggers.logMessages.map((message) => createDetailedLogEntry(afterActionTriggers.state, message, pending.originalPlayerId)),
+      ...afterActionTriggers.state.detailedLog,
+    ],
+  };
 }
 
 function transferCollectedNobleInReducer(
@@ -585,6 +776,34 @@ function playActionCard(
     ),
   };
 
+  const loyalGuardsPlayerId = getLoyalGuardsProtectedPlayerId(stateWithoutCardInHand, actionCard.card.effectKey, target, playerId);
+
+  if (loyalGuardsPlayerId) {
+    const protectedPlayer = stateWithoutCardInHand.players.find((player) => player.id === loyalGuardsPlayerId);
+    const loyalGuards = protectedPlayer ? findLoyalGuards(protectedPlayer) : undefined;
+
+    if (protectedPlayer && loyalGuards) {
+      return {
+        ...stateWithoutCardInHand,
+        pendingChoice: {
+          type: "loyalGuards",
+          originalPlayerId: playerId,
+          targetPlayerId: loyalGuardsPlayerId,
+          loyalGuardsInstanceId: loyalGuards.instanceId,
+          source: {
+            type: "action",
+            actionCard,
+            effectKey: actionCard.card.effectKey,
+            originalTarget: target,
+          },
+        },
+        passScreen: {
+          visible: false,
+        },
+      };
+    }
+  }
+
   const result = applyActionEffect(stateWithoutCardInHand, actionCard.card.effectKey, { playerId, target, actionCard });
 
   if (!result.applied) {
@@ -660,6 +879,509 @@ function playActionCard(
   }
 
   return stateWithNextTurnStep;
+}
+
+function findLoyalGuards(player: Player): CardInstance<ActionCard> | undefined {
+  return player.inFrontActions.find((action) => action.card.effectKey === "loyalGuards");
+}
+
+function transferClownAfterLoyalGuards(
+  state: GameState,
+  fromPlayerId: PlayerId,
+  toPlayerId: PlayerId,
+  clownInstanceId: CardInstanceId,
+): GameState {
+  const fromPlayer = state.players.find((player) => player.id === fromPlayerId);
+  const clown = fromPlayer?.collectedNobles.find((noble) => noble.instanceId === clownInstanceId);
+
+  if (!fromPlayer || !clown) {
+    return state;
+  }
+
+  return {
+    ...state,
+    players: state.players.map((player) => {
+      if (player.id === fromPlayerId) {
+        const updatedPlayer: Player = {
+          ...player,
+          collectedNobles: player.collectedNobles.filter((noble) => noble.instanceId !== clownInstanceId),
+        };
+
+        return {
+          ...updatedPlayer,
+          score: calculatePlayerScore(updatedPlayer),
+        };
+      }
+
+      if (player.id === toPlayerId) {
+        const updatedPlayer: Player = {
+          ...player,
+          collectedNobles: [...player.collectedNobles, clown],
+        };
+
+        return {
+          ...updatedPlayer,
+          score: calculatePlayerScore(updatedPlayer),
+        };
+      }
+
+      return player;
+    }),
+  };
+}
+
+function getLoyalGuardsBackfireTarget(
+  effectKey: ActionEffectKey,
+  originalTarget: ActionTarget | undefined,
+  originalPlayerId: PlayerId,
+): ActionTarget | undefined {
+  switch (effectKey) {
+    case "afterYou":
+    case "missed":
+    case "rushJob":
+    case "confusionInLine":
+    case "missingHeads":
+    case "infighting":
+    case "toughCrowd":
+      return { type: "player", playerId: originalPlayerId };
+    case "lackOfSupport":
+      return originalTarget?.type === "action-hand-card"
+        ? { ...originalTarget, playerId: originalPlayerId }
+        : originalTarget;
+    case "twistOfFate":
+      return originalTarget?.type === "in-front-action"
+        ? { ...originalTarget, playerId: originalPlayerId }
+        : originalTarget;
+    default:
+      return originalTarget;
+  }
+}
+
+function applyLoyalGuardsBackfire(
+  state: GameState,
+  effectKey: ActionEffectKey,
+  originalPlayerId: PlayerId,
+  target: ActionTarget | undefined,
+  actionCard: CardInstance<ActionCard>,
+): ReducerActionEffectResult {
+  if (effectKey === "informationExchange" || effectKey === "clericalError") {
+    return {
+      state,
+      applied: false,
+      message: "the protected effect was cancelled",
+    };
+  }
+
+  if (effectKey === "forcedBreak") {
+    return loyalGuardsForcedBreakBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "rainDelay") {
+    return loyalGuardsRainDelayBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "afterYou") {
+    return loyalGuardsAfterYouBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "missed") {
+    return loyalGuardsMissedBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "rushJob") {
+    return loyalGuardsRushJobBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "confusionInLine") {
+    return loyalGuardsConfusionBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "missingHeads") {
+    return loyalGuardsMissingHeadsBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "infighting") {
+    return loyalGuardsInfightingBackfire(state, originalPlayerId);
+  }
+
+  if (effectKey === "lackOfSupport") {
+    return loyalGuardsLackOfSupportBackfire(state, originalPlayerId, target);
+  }
+
+  if (effectKey === "twistOfFate") {
+    return loyalGuardsTwistOfFateBackfire(state, originalPlayerId, target);
+  }
+
+  if (effectKey === "toughCrowd") {
+    return attachPersistentActionToAttackerForLoyalGuards(state, originalPlayerId, actionCard);
+  }
+
+  return applyActionEffect(state, effectKey, {
+    playerId: originalPlayerId,
+    target,
+  });
+}
+
+function loyalGuardsForcedBreakBackfire(state: GameState, playerId: PlayerId) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  if (!player || player.hand.length === 0) {
+    return {
+      state,
+      applied: true,
+      message: `${player?.name ?? "the attacker"} had no action cards to discard`,
+    };
+  }
+
+  const discardIndex = Math.floor(Math.random() * player.hand.length);
+  const discardedCard = player.hand[discardIndex];
+
+  if (!discardedCard) {
+    return {
+      state,
+      applied: false,
+      message: "could not choose a card to discard",
+    };
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) =>
+        candidate.id === playerId
+          ? {
+              ...candidate,
+              hand: candidate.hand.filter((_, index) => index !== discardIndex),
+            }
+          : candidate,
+      ),
+      actionDeck: {
+        ...state.actionDeck,
+        discardPile: [discardedCard, ...state.actionDeck.discardPile],
+      },
+    },
+    applied: true,
+    message: `${player.name} discarded ${discardedCard.card.name}`,
+  };
+}
+
+function loyalGuardsRainDelayBackfire(state: GameState, playerId: PlayerId) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  if (!player) {
+    return {
+      state,
+      applied: false,
+      message: "could not find the attacker",
+    };
+  }
+
+  const pool = shuffleDeck([...state.actionDeck.drawPile, ...player.hand]);
+  const newHand = pool.slice(0, STARTING_HAND_SIZE);
+  const remainingDeck = pool.slice(newHand.length);
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) =>
+        candidate.id === playerId
+          ? {
+              ...candidate,
+              hand: newHand,
+            }
+          : candidate,
+      ),
+      actionDeck: {
+        ...state.actionDeck,
+        drawPile: remainingDeck,
+      },
+    },
+    applied: true,
+    message: `${player.name} shuffled their hand into the action deck and drew ${newHand.length} new action card${newHand.length === 1 ? "" : "s"}`,
+  };
+}
+
+function loyalGuardsAfterYouBackfire(state: GameState, playerId: PlayerId) {
+  const frontNoble = state.nobleLine.cards[0];
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  if (!frontNoble || !player) {
+    return { state, applied: false, message: "there was no front noble to collect" };
+  }
+
+  const baseState: GameState = {
+    ...state,
+    nobleLine: {
+      cards: state.nobleLine.cards.slice(1),
+    },
+    players: state.players.map((candidate) => {
+      if (candidate.id !== playerId) {
+        return candidate;
+      }
+
+      const updatedPlayer: Player = {
+        ...candidate,
+        collectedNobles: [...candidate.collectedNobles, frontNoble],
+      };
+
+      return {
+        ...updatedPlayer,
+        score: calculatePlayerScore(updatedPlayer),
+      };
+    }),
+  };
+  const triggered = applyNobleCollectionTriggers(baseState, playerId, frontNoble);
+
+  return {
+    state: triggered.state,
+    applied: true,
+    message: `${player.name} received ${frontNoble.card.name} instead`,
+    extraLogMessages: triggered.logMessages,
+  };
+}
+
+function loyalGuardsMissedBackfire(state: GameState, playerId: PlayerId) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  const returnedNoble = player?.collectedNobles[player.collectedNobles.length - 1];
+
+  if (!player || !returnedNoble) {
+    return { state, applied: true, message: `${player?.name ?? "the attacker"} had no collected noble to return` };
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) => {
+        if (candidate.id !== playerId) {
+          return candidate;
+        }
+
+        const updatedPlayer: Player = {
+          ...candidate,
+          collectedNobles: candidate.collectedNobles.slice(0, -1),
+        };
+
+        return {
+          ...updatedPlayer,
+          score: calculatePlayerScore(updatedPlayer),
+        };
+      }),
+      nobleLine: {
+        cards: [...state.nobleLine.cards, returnedNoble],
+      },
+    },
+    applied: true,
+    message: `${player.name} returned ${returnedNoble.card.name} to the end of the line`,
+  };
+}
+
+function loyalGuardsRushJobBackfire(state: GameState, playerId: PlayerId) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) =>
+        candidate.id === playerId
+          ? {
+              ...candidate,
+              skipNextActionTurn: true,
+            }
+          : candidate,
+      ),
+    },
+    applied: true,
+    message: `${player?.name ?? "the attacker"} cannot play an action card on their next turn`,
+  };
+}
+
+function loyalGuardsConfusionBackfire(state: GameState, playerId: PlayerId) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) =>
+        candidate.id === playerId
+          ? {
+              ...candidate,
+              shuffleLineBeforeNextCollection: true,
+            }
+          : candidate,
+      ),
+    },
+    applied: true,
+    message: `set Confusion in Line for ${player?.name ?? "the attacker"}'s next noble collection`,
+  };
+}
+
+function loyalGuardsMissingHeadsBackfire(state: GameState, playerId: PlayerId) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  if (!player || player.collectedNobles.length === 0) {
+    return { state, applied: true, message: `${player?.name ?? "the attacker"} had no collected noble to lose` };
+  }
+
+  const discardIndex = Math.floor(Math.random() * player.collectedNobles.length);
+  const discardedNoble = player.collectedNobles[discardIndex];
+
+  if (!discardedNoble) {
+    return { state, applied: false, message: "could not choose a collected noble" };
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) => {
+        if (candidate.id !== playerId) {
+          return candidate;
+        }
+
+        const updatedPlayer: Player = {
+          ...candidate,
+          collectedNobles: candidate.collectedNobles.filter((_, index) => index !== discardIndex),
+        };
+
+        return {
+          ...updatedPlayer,
+          score: calculatePlayerScore(updatedPlayer),
+        };
+      }),
+      nobleDeck: {
+        ...state.nobleDeck,
+        discardPile: [discardedNoble, ...state.nobleDeck.discardPile],
+      },
+    },
+    applied: true,
+    message: `${player.name} lost ${discardedNoble.card.name}`,
+  };
+}
+
+function loyalGuardsInfightingBackfire(state: GameState, playerId: PlayerId) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  return {
+    state: {
+      ...state,
+      pendingChoice: {
+        type: "infighting" as const,
+        originalPlayerId: playerId,
+        targetPlayerId: playerId,
+      },
+      passScreen: {
+        visible: true,
+      },
+    },
+    applied: true,
+    message: `started Infighting for ${player?.name ?? "the attacker"}`,
+  };
+}
+
+function loyalGuardsLackOfSupportBackfire(state: GameState, playerId: PlayerId, target: ActionTarget | undefined) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  const chosenAction =
+    target?.type === "action-hand-card"
+      ? player?.hand.find((action) => action.instanceId === target.instanceId)
+      : player?.hand[0];
+
+  if (!player || !chosenAction) {
+    return { state, applied: true, message: `${player?.name ?? "the attacker"} had no action card to discard` };
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) =>
+        candidate.id === playerId
+          ? {
+              ...candidate,
+              hand: candidate.hand.filter((action) => action.instanceId !== chosenAction.instanceId),
+            }
+          : candidate,
+      ),
+      actionDeck: {
+        ...state.actionDeck,
+        discardPile: [chosenAction, ...state.actionDeck.discardPile],
+      },
+    },
+    applied: true,
+    message: `${player.name} discarded ${chosenAction.card.name} from their own hand`,
+  };
+}
+
+function loyalGuardsTwistOfFateBackfire(state: GameState, playerId: PlayerId, target: ActionTarget | undefined) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  const chosenAction =
+    target?.type === "in-front-action"
+      ? player?.inFrontActions.find((action) => action.instanceId === target.instanceId)
+      : player?.inFrontActions[0];
+
+  if (!player || !chosenAction) {
+    return { state, applied: true, message: `${player?.name ?? "the attacker"} had no card in front to discard` };
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) => {
+        if (candidate.id !== playerId) {
+          return candidate;
+        }
+
+        const updatedPlayer: Player = {
+          ...candidate,
+          inFrontActions: candidate.inFrontActions.filter((action) => action.instanceId !== chosenAction.instanceId),
+        };
+
+        return {
+          ...updatedPlayer,
+          score: calculatePlayerScore(updatedPlayer),
+        };
+      }),
+      actionDeck: {
+        ...state.actionDeck,
+        discardPile: [chosenAction, ...state.actionDeck.discardPile],
+      },
+    },
+    applied: true,
+    message: `${player.name} discarded ${chosenAction.card.name} from in front of themself`,
+  };
+}
+
+function attachPersistentActionToAttackerForLoyalGuards(
+  state: GameState,
+  playerId: PlayerId,
+  actionCard: CardInstance<ActionCard>,
+) {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+
+  if (!player) {
+    return { state, applied: false, message: "could not find the attacker" };
+  }
+
+  return {
+    state: {
+      ...state,
+      players: state.players.map((candidate) => {
+        if (candidate.id !== playerId) {
+          return candidate;
+        }
+
+        const updatedPlayer: Player = {
+          ...candidate,
+          inFrontActions: [...candidate.inFrontActions, actionCard],
+        };
+
+        return {
+          ...updatedPlayer,
+          score: calculatePlayerScore(updatedPlayer),
+        };
+      }),
+    },
+    applied: true,
+    skipDiscard: true,
+    message: `put ${actionCard.card.name} in front of ${player.name}`,
+  };
 }
 
 function confirmReorderAndTakeFrontNoble(
@@ -1114,6 +1836,56 @@ function getActionAffectedPlayerIds(
     default:
       return [];
   }
+}
+
+function getLoyalGuardsProtectedPlayerId(
+  state: GameState,
+  effectKey: ActionEffectKey,
+  target: ActionTarget | undefined,
+  playerId: PlayerId,
+): PlayerId | undefined {
+  if (effectKey === "callousGuards" || effectKey === "loyalGuards") {
+    return undefined;
+  }
+
+  const playerHasLoyalGuards = (id: PlayerId) => {
+    const player = state.players.find((candidate) => candidate.id === id);
+    return Boolean(player && id !== playerId && findLoyalGuards(player));
+  };
+
+  if (effectKey === "forcedBreak" || effectKey === "rainDelay") {
+    return state.players.find((player) => player.id !== playerId && findLoyalGuards(player))?.id;
+  }
+
+  if (
+    target?.type === "player" &&
+    [
+      "afterYou",
+      "confusionInLine",
+      "infighting",
+      "informationExchange",
+      "missed",
+      "missingHeads",
+      "rushJob",
+      "toughCrowd",
+    ].includes(effectKey)
+  ) {
+    return playerHasLoyalGuards(target.playerId) ? target.playerId : undefined;
+  }
+
+  if (target?.type === "action-hand-card" && effectKey === "lackOfSupport") {
+    return playerHasLoyalGuards(target.playerId) ? target.playerId : undefined;
+  }
+
+  if (target?.type === "collected-noble" && effectKey === "clericalError") {
+    return playerHasLoyalGuards(target.playerId) ? target.playerId : undefined;
+  }
+
+  if (target?.type === "in-front-action" && effectKey === "twistOfFate") {
+    return playerHasLoyalGuards(target.playerId) ? target.playerId : undefined;
+  }
+
+  return undefined;
 }
 
 function finishGame(state: GameState): GameState {

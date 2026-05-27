@@ -30,14 +30,19 @@ async function startServer() {
   });
 
   io.on("connection", (socket) => {
-    socket.on("room:create", ({ playerName } = {}, reply?: (response: unknown) => void) => {
-      const result = roomStore.createRoom({ playerName: String(playerName ?? ""), socketId: socket.id });
+    socket.on("room:create", ({ playerName, roomName } = {}, reply?: (response: unknown) => void) => {
+      const result = roomStore.createRoom({
+        playerName: String(playerName ?? ""),
+        roomName: String(roomName ?? ""),
+        socketId: socket.id,
+      });
       socket.join(result.room.roomCode);
 
       const payload = {
         ok: true,
         room: toRoomSnapshot(result.room),
         playerId: result.playerId,
+        gameView: result.room.gameState ? createPlayerGameView(result.room.gameState, result.playerId) : undefined,
       };
 
       reply?.(payload);
@@ -62,10 +67,25 @@ async function startServer() {
         ok: true,
         room: toRoomSnapshot(result.room),
         playerId: result.playerId,
+        gameView: result.room.gameState ? createPlayerGameView(result.room.gameState, result.playerId) : undefined,
       };
 
       reply?.(payload);
       io.to(result.room.roomCode).emit("room:updated", payload.room);
+      if (result.room.gameState) {
+        emitGameViews(io, result.room);
+      }
+    });
+
+    socket.on("room:lookup", ({ roomCode } = {}, reply?: (response: unknown) => void) => {
+      const room = roomStore.lookupRoom(String(roomCode ?? ""));
+
+      if (!room) {
+        reply?.({ ok: false, error: "Room not found." });
+        return;
+      }
+
+      reply?.({ ok: true, room: toRoomSnapshot(room) });
     });
 
     socket.on("room:rejoin", ({ roomCode, playerName } = {}, reply?: (response: unknown) => void) => {
@@ -333,6 +353,20 @@ async function startServer() {
           type: "RESOLVE_CLOWN_GIFT",
           playerId: String(playerId ?? ""),
           targetPlayerId: String(targetPlayerId ?? ""),
+        },
+        reply,
+      );
+    });
+
+    socket.on("game:resolve-loyal-guards", ({ roomCode, playerId, useProtection } = {}, reply?: (response: unknown) => void) => {
+      applyCommandAndReply(
+        io,
+        String(roomCode ?? ""),
+        String(playerId ?? ""),
+        {
+          type: "RESOLVE_LOYAL_GUARDS",
+          playerId: String(playerId ?? ""),
+          useProtection: Boolean(useProtection),
         },
         reply,
       );

@@ -16,6 +16,7 @@ type PrivateChoicePanelProps = {
   onResolveClericalErrorReturn: (playerId: string, nobleId?: CardInstanceId) => void;
   onResolveInnocentVictimDiscard: (playerId: string, cardId?: CardInstanceId) => void;
   onResolveClownGift: (playerId: string, targetPlayerId: string) => void;
+  onResolveLoyalGuards: (playerId: string, useProtection: boolean) => void;
 };
 
 export function PrivateChoicePanel({
@@ -25,6 +26,7 @@ export function PrivateChoicePanel({
   onResolveClericalErrorReturn,
   onResolveInnocentVictimDiscard,
   onResolveClownGift,
+  onResolveLoyalGuards,
 }: PrivateChoicePanelProps) {
   const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
 
@@ -61,6 +63,35 @@ export function PrivateChoicePanel({
         receivingPlayerId={pendingChoice.targetPlayerId}
         onConfirm={(targetPlayerId) => onResolveClownGift(pendingChoice.targetPlayerId, targetPlayerId)}
       />
+    );
+  }
+
+  if (pendingChoice.type === "loyalGuards") {
+    const protectedPlayer = players.find((player) => player.id === pendingChoice.targetPlayerId);
+    const originalPlayer = players.find((player) => player.id === pendingChoice.originalPlayerId);
+    const actionName = pendingChoice.source.type === "action" ? pendingChoice.source.actionCard.card.name : "The Clown";
+
+    return (
+      <section className="game-page-background fixed inset-0 z-40 min-h-screen overflow-auto p-6">
+        <div className="mx-auto max-w-3xl">
+          <Card>
+            <h1 className="text-2xl font-bold">Loyal Guards</h1>
+            <p className="mt-2 text-sm text-stone-700">
+              {protectedPlayer?.name ?? "Protected player"}, {originalPlayer?.name ?? "another player"} used {actionName} against you.
+              Use Loyal Guards to block it?
+            </p>
+            <p className="mt-2 text-sm text-stone-600">
+              Loyal Guards will be discarded either way. If you block, the effect backfires when possible.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => onResolveLoyalGuards(pendingChoice.targetPlayerId, true)}>Use Loyal Guards</Button>
+              <Button onClick={() => onResolveLoyalGuards(pendingChoice.targetPlayerId, false)}>
+                Let It Happen
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </section>
     );
   }
 

@@ -22,6 +22,7 @@ export type UndoRequest = {
 
 export type Room = {
   roomCode: string;
+  roomName: string;
   players: RoomPlayer[];
   hostPlayerId: string;
   status: RoomStatus;
@@ -34,11 +35,12 @@ export function createRoomStore() {
   const rooms = new Map<string, Room>();
   const playerRoomBySocketId = new Map<string, string>();
 
-  function createRoom({ playerName, socketId }: { playerName: string; socketId: string }) {
+  function createRoom({ playerName, roomName, socketId }: { playerName: string; roomName?: string; socketId: string }) {
     const roomCode = createUniqueRoomCode(rooms);
     const hostPlayer = createPlayer({ name: playerName, socketId });
     const room: Room = {
       roomCode,
+      roomName: sanitizeRoomName(roomName),
       players: [hostPlayer],
       hostPlayerId: hostPlayer.id,
       status: "lobby",
@@ -61,6 +63,20 @@ export function createRoomStore() {
       return { error: "Room not found." };
     }
 
+    const sanitizedName = sanitizePlayerName(playerName);
+    const existingPlayer = room.players.find((player) => player.name.toLowerCase() === sanitizedName.toLowerCase());
+
+    if (existingPlayer) {
+      if (!existingPlayer.isConnected) {
+        existingPlayer.socketId = socketId;
+        existingPlayer.isConnected = true;
+        playerRoomBySocketId.set(socketId, room.roomCode);
+        return { room, playerId: existingPlayer.id };
+      }
+
+      return { error: "That name is already taken in this room." };
+    }
+
     if (room.status !== "lobby") {
       return { error: "That room has already started." };
     }
@@ -69,7 +85,7 @@ export function createRoomStore() {
       return { error: "That room is full." };
     }
 
-    const player = createPlayer({ name: playerName, socketId });
+    const player = createPlayer({ name: sanitizedName, socketId });
     room.players.push(player);
     playerRoomBySocketId.set(socketId, room.roomCode);
 
@@ -108,7 +124,14 @@ export function createRoomStore() {
       return createRoom({ playerName, socketId });
     }
 
-    const player = createPlayer({ name: playerName, socketId });
+    const sanitizedName = sanitizePlayerName(playerName);
+    const duplicateName = waitingRoom.players.some((player) => player.name.toLowerCase() === sanitizedName.toLowerCase());
+
+    if (duplicateName) {
+      return createRoom({ playerName, socketId });
+    }
+
+    const player = createPlayer({ name: sanitizedName, socketId });
     waitingRoom.players.push(player);
     playerRoomBySocketId.set(socketId, waitingRoom.roomCode);
 
@@ -160,6 +183,21 @@ export function createRoomStore() {
 
     const player = room.players.find((candidate) => candidate.socketId === socketId);
 
+    if (room.status === "lobby" && player) {
+      room.players = room.players.filter((candidate) => candidate.id !== player.id);
+
+      if (room.players.length === 0) {
+        rooms.delete(roomCode);
+        return undefined;
+      }
+
+      if (player.id === room.hostPlayerId) {
+        room.hostPlayerId = room.players[0]?.id ?? room.hostPlayerId;
+      }
+
+      return room;
+    }
+
     if (player) {
       player.isConnected = false;
       player.socketId = undefined;
@@ -182,6 +220,10 @@ export function createRoomStore() {
   }
 
   function getRoom(roomCode: string) {
+    return rooms.get(normalizeRoomCode(roomCode));
+  }
+
+  function lookupRoom(roomCode: string) {
     return rooms.get(normalizeRoomCode(roomCode));
   }
 
@@ -276,6 +318,7 @@ export function createRoomStore() {
     getRoom,
     joinRoom,
     quickJoinRoom,
+    lookupRoom,
     rejoinRoom,
     respondToUndoRequest,
     startUndoRequest,
@@ -286,6 +329,7 @@ export function createRoomStore() {
 export function toRoomSnapshot(room: Room) {
   return {
     roomCode: room.roomCode,
+    roomName: room.roomName,
     hostPlayerId: room.hostPlayerId,
     status: room.status,
     players: room.players.map((player) => ({
@@ -349,4 +393,9 @@ function normalizeRoomCode(roomCode: string) {
 function sanitizePlayerName(playerName: string) {
   const cleanedName = String(playerName ?? "").trim();
   return cleanedName.length > 0 ? cleanedName.slice(0, 24) : "Player";
+}
+
+function sanitizeRoomName(roomName: string | undefined) {
+  const cleanedName = String(roomName ?? "").trim();
+  return cleanedName.length > 0 ? cleanedName.slice(0, 36) : "Private Guillotine Room";
 }

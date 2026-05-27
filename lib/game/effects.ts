@@ -159,6 +159,7 @@ export const actionEffects: Record<ActionEffectKey, ActionEffectDefinition> = {
   infighting: createInfightingEffect(),
   clericalError: createClericalErrorEffect(),
   lackOfSupport: createLackOfSupportEffect(),
+  loyalGuards: createAttachToSelfEffect(),
   extraCart: createImmediateEffect("Add 3 nobles to the end of the line", addExtraCartNobles),
   politicalInfluence: createImmediateEffect("Draw 4 action cards and end this turn", drawPoliticalInfluenceCards),
   doubleFeature: createImmediateEffect("Take an extra front noble immediately", takeExtraFrontNoble),
