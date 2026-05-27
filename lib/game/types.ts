@@ -140,6 +140,16 @@ export interface TurnSummaryState {
   pointDelta: number;
 }
 
+export interface PlayerTurnTimeStats {
+  totalMs: number;
+  turnCount: number;
+}
+
+export interface TurnTimingState {
+  currentTurnStartedAt: number;
+  playerStats: Record<PlayerId, PlayerTurnTimeStats>;
+}
+
 export type PendingPrivateChoice =
   | {
       type: "infighting";
@@ -202,6 +212,7 @@ export interface GameState {
   passScreen: PassScreenState;
   turnEffects: TurnEffectsState;
   turnSummary: TurnSummaryState;
+  turnTiming: TurnTimingState;
   pendingChoice?: PendingPrivateChoice;
   returningFromPrivateChoice: boolean;
   notice?: string;

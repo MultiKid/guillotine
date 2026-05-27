@@ -1506,9 +1506,10 @@ function endTurn(state: GameState, playerId: PlayerId): GameState {
   }
 
   const turnSummaryEntry = createTurnSummaryBriefingEntry(state, currentPlayer);
+  const timedState = recordCurrentTurnTime(state);
   const stateWithTurnSummaryBriefing = turnSummaryEntry
-    ? addBriefingEntries(state, [turnSummaryEntry], playerId)
-    : state;
+    ? addBriefingEntries(timedState, [turnSummaryEntry], playerId)
+    : timedState;
   const nextPlayerIndex = getNextPlayerIndex(state.currentPlayerIndex, state.players.length);
   const advancedState: GameState = {
     ...stateWithTurnSummaryBriefing,
@@ -1524,6 +1525,10 @@ function endTurn(state: GameState, playerId: PlayerId): GameState {
     turnSummary: {
       nobleNames: [],
       pointDelta: 0,
+    },
+    turnTiming: {
+      ...stateWithTurnSummaryBriefing.turnTiming,
+      currentTurnStartedAt: Date.now(),
     },
   };
 
@@ -1888,9 +1893,36 @@ function getLoyalGuardsProtectedPlayerId(
   return undefined;
 }
 
-function finishGame(state: GameState): GameState {
+function recordCurrentTurnTime(state: GameState): GameState {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+
+  if (!currentPlayer) {
+    return state;
+  }
+
+  const elapsedMs = Math.max(0, Date.now() - state.turnTiming.currentTurnStartedAt);
+  const currentStats = state.turnTiming.playerStats[currentPlayer.id] ?? { totalMs: 0, turnCount: 0 };
+
   return {
     ...state,
+    turnTiming: {
+      ...state.turnTiming,
+      playerStats: {
+        ...state.turnTiming.playerStats,
+        [currentPlayer.id]: {
+          totalMs: currentStats.totalMs + elapsedMs,
+          turnCount: currentStats.turnCount + 1,
+        },
+      },
+    },
+  };
+}
+
+function finishGame(state: GameState): GameState {
+  const timedState = state.turnStep === "turnComplete" ? recordCurrentTurnTime(state) : state;
+
+  return {
+    ...timedState,
     phase: "gameEnd",
     passScreen: {
       visible: false,
@@ -1898,7 +1930,7 @@ function finishGame(state: GameState): GameState {
     turnEffects: {
       endDayAfterTurn: false,
     },
-    winnerIds: getWinnerIds(state.players),
+    winnerIds: getWinnerIds(timedState.players),
   };
 }
 

@@ -89,6 +89,8 @@ export function OnlineGameReadOnly({
   const [reorderDraftIds, setReorderDraftIds] = useState<CardInstanceId[]>([]);
   const [selectedDetailsPlayerId, setSelectedDetailsPlayerId] = useState<string | undefined>();
   const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [showPodium, setShowPodium] = useState(true);
   const previousViewRef = useRef<PlayerGameView | undefined>(undefined);
   const [flashingAction, setFlashingAction] = useState<OnlineActionFlashState | undefined>();
   const [scorePulse, setScorePulse] = useState<OnlineScorePulseState | undefined>();
@@ -164,6 +166,13 @@ export function OnlineGameReadOnly({
     () => selectedActionTargets.filter((target) => target.target.type === "in-front-action"),
     [selectedActionTargets],
   );
+  const currentTurnElapsedMs = Math.max(0, currentTime - view.turnTiming.currentTurnStartedAt);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -451,7 +460,16 @@ export function OnlineGameReadOnly({
   }, [currentPlayer?.name, view]);
 
   if (view.phase === "gameEnd") {
-    return <GameEndScreen players={view.players} winnerIds={view.winnerIds} />;
+    if (showPodium) {
+      return (
+        <GameEndScreen
+          onBackToBoard={() => setShowPodium(false)}
+          players={view.players}
+          turnTiming={view.turnTiming}
+          winnerIds={view.winnerIds}
+        />
+      );
+    }
   }
 
   function handleEnterShortcut() {
@@ -512,6 +530,17 @@ export function OnlineGameReadOnly({
 
   return (
     <div className="flex flex-col gap-4">
+      {view.phase === "gameEnd" ? (
+        <div className="flex justify-end">
+          <button
+            className="rounded-md border border-stone-300 bg-white/55 px-3 py-2 text-sm font-semibold text-stone-900 shadow-sm transition hover:bg-white/75"
+            onClick={() => setShowPodium(true)}
+            type="button"
+          >
+            Podium
+          </button>
+        </div>
+      ) : null}
       {room?.roomName ? (
         <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 text-center text-3xl font-bold text-stone-950">
           {room.roomName}
@@ -611,7 +640,11 @@ export function OnlineGameReadOnly({
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-stone-600">Online Game</p>
               <h2 className="text-xl font-bold">
-                {view.isViewerTurn ? "Your turn" : `${currentPlayer?.name ?? "A player"}'s turn`}
+                {view.phase === "gameEnd"
+                  ? "Game over"
+                  : view.isViewerTurn
+                    ? "Your turn"
+                    : `${currentPlayer?.name ?? "A player"}'s turn`}
               </h2>
             </div>
             <div className="flex flex-wrap gap-2 text-sm font-semibold text-stone-700">
@@ -619,8 +652,11 @@ export function OnlineGameReadOnly({
             </div>
           </div>
           <div className="mt-3">
-            {!view.isViewerTurn ? (
+            {view.phase !== "gameEnd" && !view.isViewerTurn ? (
               <p className="text-sm text-stone-700">Waiting for {currentPlayer?.name ?? "the current player"}.</p>
+            ) : null}
+            {view.phase !== "gameEnd" ? (
+              <p className="mt-1 text-2xl font-black tabular-nums text-stone-950">{formatTurnDuration(currentTurnElapsedMs)}</p>
             ) : null}
             {error ? <p className="text-sm font-medium text-red-800">{error}</p> : null}
           </div>
@@ -840,7 +876,7 @@ export function OnlineGameReadOnly({
             </button>
             <button
               className="rounded-md border border-amber-300 bg-amber-50/60 px-3 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100/70 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isBusy || Boolean(room?.undoRequest)}
+              disabled={view.phase === "gameEnd" || isBusy || Boolean(room?.undoRequest)}
               onClick={onRequestUndo}
               type="button"
             >
@@ -2338,6 +2374,14 @@ function getTargetChoicesMapKey(choicesByNobleId: Map<CardInstanceId, OnlineActi
 
 function formatOnlineToastMessage(message: string): string {
   return message;
+}
+
+function formatTurnDuration(milliseconds: number): string {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function normalizeCardName(name: string): string {

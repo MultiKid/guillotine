@@ -30,6 +30,10 @@ export function createInitialGameState(): GameState {
       nobleNames: [],
       pointDelta: 0,
     },
+    turnTiming: {
+      currentTurnStartedAt: Date.now(),
+      playerStats: {},
+    },
     pendingChoice: undefined,
     returningFromPrivateChoice: false,
     notice: undefined,
@@ -101,6 +105,10 @@ export function createLocalGameState(playerNames: string[], options: { shufflePl
       },
     ],
     playerBriefings: Object.fromEntries(players.map((player) => [player.id, []])),
+    turnTiming: {
+      currentTurnStartedAt: Date.now(),
+      playerStats: Object.fromEntries(players.map((player) => [player.id, { totalMs: 0, turnCount: 0 }])),
+    },
   };
 }
 

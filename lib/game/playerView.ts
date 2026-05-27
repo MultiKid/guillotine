@@ -9,6 +9,7 @@ import type {
   Player,
   PlayerId,
   TurnEffectsState,
+  TurnTimingState,
   TurnStep,
 } from "@/lib/game/types";
 import type { ValidActionTarget } from "@/lib/game/effects";
@@ -46,6 +47,7 @@ export interface PlayerGameView {
   turnStep: TurnStep;
   passScreenVisible: boolean;
   turnEffects: TurnEffectsState;
+  turnTiming: TurnTimingState;
   pendingChoice?: PendingPrivateChoice;
   returningFromPrivateChoice: boolean;
   notice?: string;
@@ -101,6 +103,7 @@ export function createPlayerGameView(state: GameState, viewerPlayerId: PlayerId)
     turnStep: state.turnStep,
     passScreenVisible: state.passScreen.visible,
     turnEffects: state.turnEffects,
+    turnTiming: state.turnTiming,
     pendingChoice: shouldExposePendingChoice(state.pendingChoice, viewerPlayerId) ? state.pendingChoice : undefined,
     returningFromPrivateChoice: state.returningFromPrivateChoice,
     notice: state.notice,

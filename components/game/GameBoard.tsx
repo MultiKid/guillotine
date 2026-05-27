@@ -67,6 +67,8 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
   }>();
   const [selectedDetailsPlayerId, setSelectedDetailsPlayerId] = useState<string | undefined>();
   const [previewCard, setPreviewCard] = useState<BaseCard | undefined>();
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [showPodium, setShowPodium] = useState(true);
   const currentPlayer = selectCurrentPlayer(state);
   const viewerPlayerId = mode === "local" ? undefined : currentPlayer?.id;
   const playerGameView = viewerPlayerId ? createPlayerGameView(state, viewerPlayerId) : undefined;
@@ -134,6 +136,13 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
     !isCollectionAnimating &&
     !pendingClownChoiceForCurrentPlayer;
   const isPassOverlayVisible = (state.passScreen.visible || Boolean(pendingEndTurnPlayerId)) && state.phase === "playing";
+  const currentTurnElapsedMs = Math.max(0, currentTime - state.turnTiming.currentTurnStartedAt);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     if (!isReorderAction) {
@@ -506,7 +515,16 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
   }
 
   if (state.phase === "gameEnd") {
-    return <GameEndScreen players={state.players} winnerIds={state.winnerIds} />;
+    if (showPodium) {
+      return (
+        <GameEndScreen
+          onBackToBoard={() => setShowPodium(false)}
+          players={state.players}
+          turnTiming={state.turnTiming}
+          winnerIds={state.winnerIds}
+        />
+      );
+    }
   }
 
   const pendingTargetPlayerId = state.passScreen.visible ? state.pendingChoice?.targetPlayerId : undefined;
@@ -541,6 +559,11 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
   return (
     <section className="relative">
       <div aria-hidden={isPassOverlayVisible} className="flex flex-col gap-4">
+      {state.phase === "gameEnd" ? (
+        <div className="flex justify-end">
+          <Button onClick={() => setShowPodium(true)}>Podium</Button>
+        </div>
+      ) : null}
       {state.notice ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 p-4">
           <div className="max-w-md rounded-lg border border-stone-300 bg-white/50 p-5 text-center shadow-xl backdrop-blur-sm">
@@ -559,6 +582,9 @@ export function GameBoard({ mode = "local", onBackToHome }: GameBoardProps) {
           <div className="rounded-lg border border-stone-300 bg-white/40 p-2 shadow-sm backdrop-blur-sm">
             <p className="text-xs text-stone-600">Current Turn</p>
             <h2 className="truncate text-base font-bold">{currentPlayer?.name ?? "No player"}</h2>
+            {state.phase !== "gameEnd" ? (
+              <p className="mt-1 text-lg font-black tabular-nums text-stone-950">{formatTurnDuration(currentTurnElapsedMs)}</p>
+            ) : null}
             {currentPlayer?.skipActionThisTurn ? (
               <p className="mt-2 rounded-md bg-amber-100/45 px-2 py-1 text-xs font-medium text-amber-900">
                 Rush Job: no action card.
@@ -922,5 +948,13 @@ function getTargetNobleId(target: ActionTarget): CardInstanceId | undefined {
   }
 
   return undefined;
+}
+
+function formatTurnDuration(milliseconds: number): string {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
