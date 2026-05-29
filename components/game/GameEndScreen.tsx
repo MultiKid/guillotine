@@ -8,8 +8,11 @@ type GameEndPlayer = {
 
 type GameEndScreenProps = {
   onBackToBoard?: () => void;
+  onRequestRematch?: () => void;
   players: GameEndPlayer[];
+  rematchPlayerIds?: PlayerId[];
   turnTiming?: TurnTimingState;
+  viewerPlayerId?: PlayerId;
   winnerIds: PlayerId[];
 };
 
@@ -45,11 +48,19 @@ const podiumStyles = [
   },
 ];
 
-export function GameEndScreen({ onBackToBoard, players, turnTiming }: GameEndScreenProps) {
+export function GameEndScreen({
+  onBackToBoard,
+  onRequestRematch,
+  players,
+  rematchPlayerIds = [],
+  turnTiming,
+  viewerPlayerId,
+}: GameEndScreenProps) {
   const rankedPlayers = getRankedPlayers(players);
   const podiumPlayers = rankedPlayers.filter((player) => player.rank <= 3);
   const remainingPlayers = rankedPlayers.filter((player) => player.rank > 3);
   const turnSpeedPlayers = getTurnSpeedPlayers(players, turnTiming);
+  const viewerRequestedRematch = Boolean(viewerPlayerId && rematchPlayerIds.includes(viewerPlayerId));
 
   return (
     <section className="relative flex min-h-[calc(100vh-3rem)] items-center justify-center overflow-hidden rounded-xl border border-white/40 bg-white/35 p-6 shadow-2xl backdrop-blur-sm">
@@ -65,6 +76,21 @@ export function GameEndScreen({ onBackToBoard, players, turnTiming }: GameEndScr
       ) : null}
       <div className="relative z-10 w-full max-w-5xl text-center">
         <p className="text-sm font-semibold uppercase tracking-wide text-amber-900">Final Scores</p>
+        {onRequestRematch ? (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <button
+              className="rounded-md border border-amber-400 bg-amber-100/70 px-4 py-2 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-200/80 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={viewerRequestedRematch}
+              onClick={onRequestRematch}
+              type="button"
+            >
+              {viewerRequestedRematch ? "Rematch Requested" : "Rematch"}
+            </button>
+            <p className="text-xs font-medium text-stone-700">
+              {rematchPlayerIds.length}/{players.length} players ready
+            </p>
+          </div>
+        ) : null}
 
         <div
           className="mt-10 grid items-end gap-4"

@@ -29,6 +29,10 @@ export function createOnlineGameState(roomPlayers: RoomPlayer[]): GameState {
       playerId: remapOptionalPlayerId(entry.playerId, playerIdMap),
       affectedPlayerIds: entry.affectedPlayerIds?.map((playerId) => playerIdMap.get(playerId) ?? playerId),
     })),
+    turnTiming: {
+      currentTurnStartedAt: Date.now(),
+      playerStats: Object.fromEntries(mappedPlayers.map((player) => [player.id, { totalMs: 0, turnCount: 0 }])),
+    },
   };
 }
 

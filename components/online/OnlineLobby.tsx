@@ -72,24 +72,13 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
             (response) => {
               const lookupResponse = response as { ok?: boolean; room?: OnlineRoomSnapshot };
 
-              if (lookupResponse?.ok) {
+              if (lookupResponse?.ok && lookupResponse.room && isSavedRoomAvailableToJoin(lookupResponse.room)) {
                 setPlayerName(savedRoom.playerName);
                 setRoomCodeInput(savedRoom.roomCode);
-                socket?.emit(
-                  "room:rejoin",
-                  {
-                    roomCode: savedRoom.roomCode,
-                    playerName: savedRoom.playerName,
-                  },
-                  (rejoinResponse) => {
-                    const lobbyResponse = rejoinResponse as LobbyResponse;
-
-                    if (lobbyResponse?.ok) {
-                      handleLobbyResponse(lobbyResponse);
-                    }
-                  },
-                );
+                return;
               }
+
+              clearSavedOnlineRoom();
             },
           );
         }
@@ -229,6 +218,7 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
         onResolveInnocentVictimDiscard={resolveInnocentVictimDiscard}
         onResolveLoyalGuards={resolveLoyalGuards}
         onReloadTestHand={reloadTestHand}
+        onRequestRematch={requestRematch}
         onRequestUndo={requestUndo}
         onRespondToUndoRequest={respondToUndoRequest}
         onTakeFrontNoble={takeFrontNoble}
@@ -481,6 +471,41 @@ export function OnlineLobby({ onBackToHome }: OnlineLobbyProps) {
 
         if (commandResponse.room) {
           setRoom(commandResponse.room);
+        }
+
+        setIsBusy(false);
+      },
+    );
+  }
+
+  function requestRematch() {
+    if (!room || !playerId) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(undefined);
+    socketRef.current?.emit(
+      "game:request-rematch",
+      {
+        roomCode: room.roomCode,
+        playerId,
+      },
+      (response) => {
+        const commandResponse = response as { ok?: boolean; error?: string; gameView?: PlayerGameView; room?: OnlineRoomSnapshot };
+
+        if (!commandResponse?.ok) {
+          setError(commandResponse?.error ?? "Could not request a rematch.");
+          setIsBusy(false);
+          return;
+        }
+
+        if (commandResponse.room) {
+          setRoom(commandResponse.room);
+        }
+
+        if (commandResponse.gameView) {
+          setGameView(commandResponse.gameView);
         }
 
         setIsBusy(false);
@@ -752,4 +777,16 @@ function saveOnlineRoom(room: { roomCode: string; playerName: string }) {
   } catch {
     // Local storage is best-effort only. Failing to save should not block play.
   }
+}
+
+function clearSavedOnlineRoom() {
+  try {
+    window.localStorage.removeItem(ONLINE_REJOIN_STORAGE_KEY);
+  } catch {
+    // Local storage is best-effort only. Failing to clear should not block play.
+  }
+}
+
+function isSavedRoomAvailableToJoin(room: OnlineRoomSnapshot): boolean {
+  return room.status !== "started" || room.gamePhase !== "gameEnd";
 }

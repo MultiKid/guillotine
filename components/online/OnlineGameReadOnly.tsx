@@ -27,6 +27,7 @@ type OnlineGameReadOnlyProps = {
   onResolveLoyalGuards: (useProtection: boolean) => void;
   onReloadTestHand: () => void;
   onRequestUndo: () => void;
+  onRequestRematch: () => void;
   onRespondToUndoRequest: (requestId: string, approve: boolean) => void;
   onTakeFrontNoble: (pendingReorder?: { cardId: CardInstanceId; reorderedNobleIds: CardInstanceId[] }) => void;
   onDismissRoomAlert?: () => void;
@@ -75,6 +76,7 @@ export function OnlineGameReadOnly({
   onResolveInnocentVictimDiscard,
   onResolveLoyalGuards,
   onReloadTestHand,
+  onRequestRematch,
   onRequestUndo,
   onRespondToUndoRequest,
   onTakeFrontNoble,
@@ -464,8 +466,11 @@ export function OnlineGameReadOnly({
       return (
         <GameEndScreen
           onBackToBoard={() => setShowPodium(false)}
+          onRequestRematch={onRequestRematch}
           players={view.players}
+          rematchPlayerIds={room?.rematchPlayerIds}
           turnTiming={view.turnTiming}
+          viewerPlayerId={view.viewerPlayerId}
           winnerIds={view.winnerIds}
         />
       );

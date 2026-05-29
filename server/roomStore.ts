@@ -27,6 +27,7 @@ export type Room = {
   hostPlayerId: string;
   status: RoomStatus;
   gameState?: GameState;
+  rematchPlayerIds: string[];
   undoRequest?: UndoRequest;
   createdAt: number;
 };
@@ -45,6 +46,7 @@ export function createRoomStore() {
       hostPlayerId: hostPlayer.id,
       status: "lobby",
       gameState: undefined,
+      rematchPlayerIds: [],
       undoRequest: undefined,
       createdAt: Date.now(),
     };
@@ -163,8 +165,50 @@ export function createRoomStore() {
 
     room.status = "started";
     room.gameState = createGameState(room.players);
+    room.rematchPlayerIds = [];
+    room.undoRequest = undefined;
 
     return { room };
+  }
+
+  function requestRematch({
+    createGameState,
+    playerId,
+    roomCode,
+  }: {
+    createGameState: (players: RoomPlayer[]) => GameState;
+    playerId: string;
+    roomCode: string;
+  }) {
+    const room = rooms.get(normalizeRoomCode(roomCode));
+
+    if (!room?.gameState) {
+      return { error: "Game has not started yet." };
+    }
+
+    if (room.gameState.phase !== "gameEnd") {
+      return { error: "Rematch is only available after the game ends." };
+    }
+
+    if (!room.players.some((player) => player.id === playerId)) {
+      return { error: "Player not found." };
+    }
+
+    if (!room.rematchPlayerIds.includes(playerId)) {
+      room.rematchPlayerIds.push(playerId);
+    }
+
+    const isApproved = room.players.every((player) => room.rematchPlayerIds.includes(player.id));
+
+    if (isApproved) {
+      room.status = "started";
+      room.gameState = createGameState(room.players);
+      room.rematchPlayerIds = [];
+      room.undoRequest = undefined;
+      return { room, started: true };
+    }
+
+    return { room, started: false };
   }
 
   function disconnectSocket(socketId: string): Room | undefined {
@@ -320,6 +364,7 @@ export function createRoomStore() {
     quickJoinRoom,
     lookupRoom,
     rejoinRoom,
+    requestRematch,
     respondToUndoRequest,
     startUndoRequest,
     startRoom,
@@ -330,6 +375,7 @@ export function toRoomSnapshot(room: Room) {
   return {
     roomCode: room.roomCode,
     roomName: room.roomName,
+    gamePhase: room.gameState?.phase,
     hostPlayerId: room.hostPlayerId,
     status: room.status,
     players: room.players.map((player) => ({
@@ -346,6 +392,7 @@ export function toRoomSnapshot(room: Room) {
           approvedPlayerIds: [...room.undoRequest.approvedPlayerIds],
         }
       : undefined,
+    rematchPlayerIds: [...room.rematchPlayerIds],
   };
 }
 

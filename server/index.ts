@@ -284,6 +284,30 @@ async function startServer() {
       io.to(result.room.roomCode).emit("room:updated", snapshot);
     });
 
+    socket.on("game:request-rematch", ({ roomCode, playerId } = {}, reply?: (response: unknown) => void) => {
+      const result = roomStore.requestRematch({
+        createGameState: createOnlineGameState,
+        playerId: String(playerId ?? ""),
+        roomCode: String(roomCode ?? ""),
+      });
+
+      if (result.error || !result.room) {
+        reply?.({ ok: false, error: result.error ?? "Could not request rematch." });
+        return;
+      }
+
+      const snapshot = toRoomSnapshot(result.room);
+      const gameView = result.room.gameState ? createPlayerGameView(result.room.gameState, String(playerId ?? "")) : undefined;
+
+      reply?.({ ok: true, room: snapshot, gameView });
+      io.to(result.room.roomCode).emit(result.started ? "room:started" : "room:updated", snapshot);
+      io.to(result.room.roomCode).emit("room:updated", snapshot);
+
+      if (result.started) {
+        emitGameViews(io, result.room);
+      }
+    });
+
     socket.on("game:end-turn", ({ roomCode, playerId } = {}, reply?: (response: unknown) => void) => {
       applyCommandAndReply(io, String(roomCode ?? ""), String(playerId ?? ""), { type: "END_TURN", playerId: String(playerId ?? "") }, reply);
     });
