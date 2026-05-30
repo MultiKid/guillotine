@@ -606,10 +606,9 @@ function createConfusionInLineEffect(): ActionEffectDefinition {
   return {
     label: "Choose a player whose next collection shuffles the line first",
     requiresTarget: true,
-    canApply: (state, context) => state.players.some((player) => player.id !== context.playerId),
+    canApply: (state) => state.players.length > 0,
     getValidTargets: (state, context) =>
       state.players
-        .filter((player) => player.id !== context.playerId)
         .map((player) => ({
           target: {
             type: "player" as const,
@@ -1311,7 +1310,7 @@ function swapNobleWithTopDeckNoble(state: GameState, context: ActionEffectContex
 function applyConfusionInLine(state: GameState, context: ActionEffectContext): ActionEffectResult {
   const target = context.target;
 
-  if (!target || target.type !== "player" || target.playerId === context.playerId) {
+  if (!target || target.type !== "player") {
     return invalidResult(state, "requires a player target");
   }
 
